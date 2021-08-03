@@ -1,0 +1,105 @@
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
+
+#include <hal/window/window.hpp>
+
+#include <hal/render/vk/raii.hpp>
+#include <hal/render/vk/context.hpp>
+
+
+using namespace sandbox::hal;
+using namespace sandbox::hal::render;
+
+namespace
+{
+    class window_context_init_raii
+    {
+    public:
+        window_context_init_raii()
+        {
+            glfwInit();
+         /*   if (!glfwVulkanSupported()) {
+                throw std::runtime_error("Vulkan unsupported.");
+            }*/
+
+            glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+            glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        }
+
+        ~window_context_init_raii()
+        {
+            avk::context::deinit();
+        }
+    };
+
+    class glw_window : public sandbox::hal::window::impl
+    {
+    public:
+        glw_window(size_t width, size_t height, const std::string& name)
+        {
+            static std::weak_ptr<window_context_init_raii> window_context{};
+            if (auto curr_window_context = window_context.lock(); curr_window_context == nullptr) {
+                m_window_ctx = std::make_shared<window_context_init_raii>();
+                window_context = m_window_ctx;
+            } else {
+                m_window_ctx = curr_window_context;
+            }
+
+            m_window_handler.reset(glfwCreateWindow(width, height, name.c_str(), nullptr, nullptr));
+
+            uint32_t ext_count{0};
+            const char* req_ext[] = {
+                VK_KHR_SURFACE_EXTENSION_NAME,
+                VK_KHR_XCB_SURFACE_EXTENSION_NAME
+            };
+
+//            auto ext_names = glfwGetRequiredInstanceExtensions(&ext_count);
+
+            avk::context::init_instance({
+                .extensions = {
+                    .names = req_ext,
+                    .count = 2
+                }
+            });
+
+            VkSurfaceKHR surface;
+            auto res = glfwCreateWindowSurface(*avk::context::instance(), m_window_handler.get(), nullptr, &surface);
+            assert(res == VK_SUCCESS);
+            assert(surface != nullptr);
+            vk::SurfaceKHR sf{surface};
+
+  /*          auto sf = avk::create_surface({}, [this]() -> vk::SurfaceKHR {
+
+                return {surface};
+            });*/
+
+            avk::context::init_device({
+                .required_supported_surfaces = &surface,
+                .required_supported_surfaces_count = 1
+            });
+
+//            m_surface = std::move(sf);
+        }
+
+        bool closed() override
+        {
+            return glfwWindowShouldClose(m_window_handler.get());
+        }
+
+        void main_loop() override
+        {
+            glfwPollEvents();
+        }
+
+    private:
+        std::unique_ptr<GLFWwindow, void(*)(GLFWwindow* window)> m_window_handler{nullptr, glfwDestroyWindow};
+        std::shared_ptr<window_context_init_raii> m_window_ctx{};
+        avk::surface m_surface{};
+    };
+}
+
+
+std::unique_ptr<window::impl> sandbox::hal::window::impl::create(size_t width, size_t height, const std::string& name)
+{
+    return std::make_unique<glw_window>(width, height, name);
+}

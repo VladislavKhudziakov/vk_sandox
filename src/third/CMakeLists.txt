@@ -1,0 +1,5 @@
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/glm)
+set(GLFW_BUILD_EXAMPLES OFF)
+set(GLFW_BUILD_TESTS OFF)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/glfw)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/spdlog)
