@@ -1,0 +1,15 @@
+[submodule "src/third/glm"]
+	path = src/third/glm
+	url = https://github.com/g-truc/glm
+[submodule "src/third/glfw"]
+	path = src/third/glfw
+	url = https://github.com/glfw/glfw
+[submodule "src/third/vulkan_hpp/--force"]
+	path = src/third/vulkan_hpp/--force
+	url = https://github.com/KhronosGroup/Vulkan-Hpp
+[submodule "src/third/vulkan_hpp/Vulkan-Hpp"]
+	path = src/third/vulkan_hpp/Vulkan-Hpp
+	url = https://github.com/KhronosGroup/Vulkan-Hpp
+[submodule "src/third/spdlog"]
+	path = src/third/spdlog
+	url = https://github.com/gabime/spdlog
