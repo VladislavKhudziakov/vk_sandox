@@ -4,7 +4,7 @@
 
 #include <hal/render/vk/raii.hpp>
 
-//#include <spdlog/spdlog.h>
+#include <spdlog/spdlog.h>
 
 #include <functional>
 #include <vector>
@@ -192,13 +192,13 @@ public:
                 case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
                     [[fallthrough]];
                 case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
-//                    spdlog::info(pCallbackData->pMessage);
+                    spdlog::info(pCallbackData->pMessage);
                     break;
                 case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-//                    spdlog::warn(pCallbackData->pMessage);
+                    spdlog::warn(pCallbackData->pMessage);
                     break;
                 case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-//                    spdlog::error(pCallbackData->pMessage);
+                    spdlog::error(pCallbackData->pMessage);
                     break;
                 default:
                     throw std::runtime_error("Bad message severity.");
