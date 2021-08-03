@@ -90,7 +90,7 @@ namespace sandbox::hal::render::avk
             return instance;
         };
 
-        return avk::instance{_create_instance, [](const vk::Instance& instance) {instance.template destroy();}};
+        return avk::instance{_create_instance, [](const vk::Instance& instance) {instance.destroy();}};
     }
 
 
@@ -99,20 +99,20 @@ namespace sandbox::hal::render::avk
     {
         auto _create_device = [&gpu, &args...]() {
             vk::Device device{};
-            vk::Result result = gpu.template createDevice(std::forward<Args>(args)..., &device);
+            vk::Result result = gpu.createDevice(std::forward<Args>(args)..., &device);
             if (result != vk::Result::eSuccess) {
                 throw std::runtime_error("Cannot init device.");
             }
             return device;
         };
 
-        return avk::device{_create_device, [](const vk::Device& device) {device.template destroy();}};
+        return avk::device{_create_device, [](const vk::Device& device) {device.destroy();}};
     }
 
 
     inline avk::surface create_surface(vk::Instance instance, const std::function<vk::SurfaceKHR()>& _create_surface = {})
     {
-        return avk::surface{_create_surface, [instance](const vk::SurfaceKHR& surface) {instance.template destroySurfaceKHR(surface);}};
+        return avk::surface{_create_surface, [instance](const vk::SurfaceKHR& surface) {instance.destroySurfaceKHR(surface);}};
     }
 }
 

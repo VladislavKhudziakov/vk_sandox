@@ -12,5 +12,9 @@ make_bin(
         spdlog
         Vulkan::Vulkan
 )
-target_compile_definitions(hal PRIVATE VK_USE_PLATFORM_XCB_KHR)
 
+if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+    target_compile_definitions(hal PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+elseif(CMAKE_SYSTEM_NAME MATCHES "Linux")
+    target_compile_definitions(hal PRIVATE VK_USE_PLATFORM_XCB_KHR)
+endif()

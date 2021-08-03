@@ -31,7 +31,7 @@ namespace sandbox::hal::render::avk
         {
             extensions_info extensions;
             layers_info layers;
-            VkSurfaceKHR* required_supported_surfaces = nullptr;
+            vk::SurfaceKHR* required_supported_surfaces = nullptr;
             size_t required_supported_surfaces_count{0};
         };
 

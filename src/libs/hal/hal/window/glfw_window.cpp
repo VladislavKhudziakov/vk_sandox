@@ -48,37 +48,27 @@ namespace
             m_window_handler.reset(glfwCreateWindow(width, height, name.c_str(), nullptr, nullptr));
 
             uint32_t ext_count{0};
-            const char* req_ext[] = {
-                VK_KHR_SURFACE_EXTENSION_NAME,
-                VK_KHR_XCB_SURFACE_EXTENSION_NAME
-            };
-
-//            auto ext_names = glfwGetRequiredInstanceExtensions(&ext_count);
+            auto ext_names = glfwGetRequiredInstanceExtensions(&ext_count);
 
             avk::context::init_instance({
                 .extensions = {
-                    .names = req_ext,
+                    .names = ext_names,
                     .count = 2
                 }
             });
 
-            VkSurfaceKHR surface;
-            auto res = glfwCreateWindowSurface(*avk::context::instance(), m_window_handler.get(), nullptr, &surface);
-            assert(res == VK_SUCCESS);
-            assert(surface != nullptr);
-            vk::SurfaceKHR sf{surface};
-
-  /*          auto sf = avk::create_surface({}, [this]() -> vk::SurfaceKHR {
-
-                return {surface};
-            });*/
-
-            avk::context::init_device({
-                .required_supported_surfaces = &surface,
-                .required_supported_surfaces_count = 1
+            m_surface = avk::create_surface(*avk::context::instance(), [this]() -> vk::SurfaceKHR {
+                VkSurfaceKHR surface;
+                auto res = glfwCreateWindowSurface(static_cast<VkInstance>(*avk::context::instance()), m_window_handler.get(), nullptr, &surface);
+                assert(res == VK_SUCCESS);
+                assert(surface != VK_NULL_HANDLE);
+                return vk::SurfaceKHR{surface};
             });
 
-//            m_surface = std::move(sf);
+            avk::context::init_device({
+                .required_supported_surfaces = m_surface,
+                .required_supported_surfaces_count = 1
+            });
         }
 
         bool closed() override

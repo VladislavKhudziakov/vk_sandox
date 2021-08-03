@@ -286,9 +286,8 @@ private:
 
             for (int i = 0; i < data.required_supported_surfaces_count; ++i) {
                 VkBool32 surface_supported{VK_FALSE};
-                assert(vkGetPhysicalDeviceSurfaceSupportKHR != nullptr);
-                VkResult res = vkGetPhysicalDeviceSurfaceSupportKHR(gpu, graphics_queue_family, data.required_supported_surfaces[i], &surface_supported);
-                if (res != VK_SUCCESS) {
+                vk::Result res = gpu.getSurfaceSupportKHR(graphics_queue_family, data.required_supported_surfaces[i], &surface_supported);
+                if (res != vk::Result::eSuccess) {
                     throw std::runtime_error("Cannot detect surface support.");
                 }
                 if (!surface_supported) {
@@ -406,7 +405,7 @@ private:
         std::vector<vk::DeviceQueueCreateInfo> queue_create_infos{};
 
         for (auto next = ++m_queue_families_data.begin(), curr = m_queue_families_data.begin(); next != m_queue_families_data.end(); ++next, ++curr) {
-            if (curr->first == next->first && queue_create_infos.empty()) {
+            if (curr->second.first == next->second.first && !queue_create_infos.empty()) {
                 continue;
             }
             queues_priorities.emplace_back() = std::vector<float>(static_cast<size_t>(curr->second.second), 1.0f);
