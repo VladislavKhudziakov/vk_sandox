@@ -10,6 +10,7 @@ make_bin(
     DEPENDS
         glfw
         spdlog
+        VulkanMemoryAllocator
         Vulkan::Vulkan
 )
 

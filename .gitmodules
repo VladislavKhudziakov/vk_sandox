@@ -13,3 +13,6 @@
 [submodule "src/third/spdlog"]
 	path = src/third/spdlog
 	url = https://github.com/gabime/spdlog
+[submodule "src/third/VulkanMemoryAllocator"]
+	path = src/third/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator

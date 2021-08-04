@@ -166,20 +166,20 @@ public:
             implicit_required_instance_extensions);
 
         vk::ApplicationInfo app_info{
-            "vk_sandbox",
-            VK_MAKE_VERSION(0, 1, 0),
-            "vk_sandbox",
-            VK_MAKE_VERSION(0, 1, 0),
-            VK_API_VERSION_1_1
+            .pApplicationName = "vk_sandbox",
+            .applicationVersion = VK_MAKE_VERSION(0, 1, 0),
+            .pEngineName = "vk_sandbox",
+            .engineVersion = VK_MAKE_VERSION(0, 1, 0),
+            .apiVersion = VK_API_VERSION_1_2
         };
 
         vk::InstanceCreateInfo instance_info {
-            {},
-            &app_info,
-            static_cast<uint32_t>(layers.size()),
-            layers.data(),
-            static_cast<uint32_t>(extensions.size()),
-            extensions.data()
+            .flags = {},
+            .pApplicationInfo = &app_info,
+            .enabledLayerCount = static_cast<uint32_t>(layers.size()),
+            .ppEnabledLayerNames = layers.data(),
+            .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
+            .ppEnabledExtensionNames = extensions.data()
         };
 
         static auto debug_callback = [](
@@ -206,17 +206,17 @@ public:
             return VK_TRUE;
         };
 
-        vk::DebugUtilsMessengerCreateInfoEXT debug_messenger_info(
-                {},
-                vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
-                vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
-                vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
-                vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning,
-                vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-                vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
-                vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
-                debug_callback
-            );
+        vk::DebugUtilsMessengerCreateInfoEXT debug_messenger_info{
+            .flags = {},
+            .messageSeverity =  vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
+                                vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
+                                vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
+                                vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning,
+            .messageType =  vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+                            vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
+                            vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
+            .pfnUserCallback = debug_callback
+        };
 
         instance_info.setPNext(&debug_messenger_info);
 
@@ -228,9 +228,10 @@ public:
     {
         select_gpu(data);
         create_device(data);
+        create_allocator();
     }
 
-    uint32_t queue_family(vk::QueueFlagBits supported_ops)
+    uint32_t queue_family(vk::QueueFlagBits supported_ops) const
     {
         if (supported_ops & vk::QueueFlagBits::eGraphics) {
             return m_queue_families_data[vk::QueueFlagBits::eGraphics].first;
@@ -243,7 +244,7 @@ public:
         }
     }
 
-    uint32_t queues_count(vk::QueueFlagBits supported_ops)
+    uint32_t queues_count(vk::QueueFlagBits supported_ops) const
     {
         if (supported_ops & vk::QueueFlagBits::eGraphics) {
             return m_queue_families_data[vk::QueueFlagBits::eGraphics].second;
@@ -257,13 +258,19 @@ public:
     }
 
 
-    vk::Queue queue(vk::QueueFlagBits supported_ops, uint32_t index)
+    vk::Queue queue(vk::QueueFlagBits supported_ops, uint32_t index) const
     {
         if (index >= queues_count(supported_ops)) {
             throw std::runtime_error("Queue index exceed queues count for current queue family.");
         }
 
         return m_device->getQueue(queue_family(supported_ops), index);
+    }
+
+
+    VmaAllocator allocator() const
+    {
+        return m_allocator;
     }
 
 private:
@@ -409,28 +416,48 @@ private:
                 continue;
             }
             queues_priorities.emplace_back() = std::vector<float>(static_cast<size_t>(curr->second.second), 1.0f);
-            queue_create_infos.emplace_back() = vk::DeviceQueueCreateInfo({}, curr->second.first, curr->second.second, queues_priorities.back().data());
+            queue_create_infos.emplace_back() = vk::DeviceQueueCreateInfo{
+                .flags = {},
+                .queueFamilyIndex = static_cast<uint32_t>(curr->second.first),
+                .queueCount = static_cast<uint32_t>(curr->second.second),
+                .pQueuePriorities = queues_priorities.back().data()
+            };
         }
 
         vk::PhysicalDeviceFeatures features = m_gpu.getFeatures();
 
-        vk::DeviceCreateInfo device_info(
-            {},
-            queue_create_infos.size(),
-            queue_create_infos.data(),
-            device_layers.size(),
-            device_layers.data(),
-            device_extensions.size(),
-            device_extensions.data(),
-            &features);
+        vk::DeviceCreateInfo device_info{
+            .flags = {},
+            .queueCreateInfoCount = queue_create_infos.size(),
+            .pQueueCreateInfos = queue_create_infos.data(),
+            .enabledLayerCount = device_layers.size(),
+            .ppEnabledLayerNames = device_layers.data(),
+            .enabledExtensionCount = device_extensions.size(),
+            .ppEnabledExtensionNames = device_extensions.data(),
+            .pEnabledFeatures = &features
+        };
 
         m_device = avk::create_device(m_gpu, &device_info, nullptr);
+    }
+
+
+    void create_allocator()
+    {
+        VmaAllocatorCreateInfo allocator_info{
+            .physicalDevice = static_cast<VkPhysicalDevice>(m_gpu),
+            .device = static_cast<VkDevice>(static_cast<vk::Device>(m_device)),
+            .instance = static_cast<VkInstance>(static_cast<vk::Instance>(m_instance)),
+            .vulkanApiVersion = VK_API_VERSION_1_2,
+        };
+
+        m_allocator = ::create_allocator(allocator_info);
     }
 
     avk::instance m_instance{};
     vk::PhysicalDevice m_gpu{};
     avk::device m_device{};
-    std::unordered_map<vk::QueueFlagBits, std::pair<int32_t, int32_t>> m_queue_families_data{};
+    avk::allocator m_allocator{};
+    mutable std::unordered_map<vk::QueueFlagBits, std::pair<int32_t, int32_t>> m_queue_families_data{};
 };
 
 
@@ -494,4 +521,10 @@ uint32_t context::queues_count(vk::QueueFlagBits supported_ops)
 vk::Queue context::queue(vk::QueueFlagBits supported_ops, uint32_t index)
 {
     return m_impl->queue(supported_ops, index);
+}
+
+
+VmaAllocator context::allocator()
+{
+    return m_impl->allocator();
 }

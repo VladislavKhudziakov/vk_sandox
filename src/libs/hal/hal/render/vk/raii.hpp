@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <functional>
 
+#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 #include <vulkan/vulkan.hpp>
+
+#include <vk_mem_alloc.h>
 
 namespace sandbox::hal::render::avk
 {
@@ -69,6 +72,11 @@ namespace sandbox::hal::render::avk
             return &m_handler;
         }
 
+        operator T() const
+        {
+            return m_handler;
+        }
+
     private:
         T m_handler{};
         std::function<void(const T&)> m_destroy{};
@@ -77,6 +85,7 @@ namespace sandbox::hal::render::avk
     using instance = raii_handler<vk::Instance>;
     using device = raii_handler<vk::Device>;
     using surface = raii_handler<vk::SurfaceKHR>;
+    using allocator = raii_handler<VmaAllocator>;
 
     template <typename... Args>
     avk::instance create_instance(Args&& ...args)
@@ -113,6 +122,18 @@ namespace sandbox::hal::render::avk
     inline avk::surface create_surface(vk::Instance instance, const std::function<vk::SurfaceKHR()>& _create_surface = {})
     {
         return avk::surface{_create_surface, [instance](const vk::SurfaceKHR& surface) {instance.destroySurfaceKHR(surface);}};
+    }
+
+
+    inline avk::allocator create_allocator(const VmaAllocatorCreateInfo& alloc_info)
+    {
+        auto create_allocator = [&alloc_info]() {
+            VmaAllocator allocator;
+            vmaCreateAllocator(&alloc_info, &allocator);
+            return allocator;
+        };
+
+        return avk::allocator{create_allocator, vmaDestroyAllocator};
     }
 }
 

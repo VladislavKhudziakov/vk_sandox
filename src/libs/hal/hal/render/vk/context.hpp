@@ -1,8 +1,9 @@
 #pragma once
 
-#include <vulkan/vulkan.hpp>
+#include <hal/render/vk/raii.hpp>
 
 #include <memory>
+
 
 namespace sandbox::hal::render::avk
 {
@@ -29,8 +30,8 @@ namespace sandbox::hal::render::avk
 
         struct device_data
         {
-            extensions_info extensions;
-            layers_info layers;
+            extensions_info extensions{};
+            layers_info layers{};
             vk::SurfaceKHR* required_supported_surfaces = nullptr;
             size_t required_supported_surfaces_count{0};
         };
@@ -43,6 +44,7 @@ namespace sandbox::hal::render::avk
         static vk::Instance* instance();
         static vk::PhysicalDevice* gpu();
         static vk::Device* device();
+        static VmaAllocator allocator();
         static uint32_t queue_family(vk::QueueFlagBits);
         static uint32_t queues_count(vk::QueueFlagBits);
         static vk::Queue queue(vk::QueueFlagBits, uint32_t index);

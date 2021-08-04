@@ -3,7 +3,6 @@
 
 #include <hal/window/window.hpp>
 
-#include <hal/render/vk/raii.hpp>
 #include <hal/render/vk/context.hpp>
 
 
@@ -18,9 +17,9 @@ namespace
         window_context_init_raii()
         {
             glfwInit();
-         /*   if (!glfwVulkanSupported()) {
+            if (!glfwVulkanSupported()) {
                 throw std::runtime_error("Vulkan unsupported.");
-            }*/
+            }
 
             glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
             glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -69,6 +68,13 @@ namespace
                 .required_supported_surfaces = m_surface,
                 .required_supported_surfaces_count = 1
             });
+
+            std::vector<vk::SurfaceFormatKHR> formats = avk::context::gpu()->getSurfaceFormatsKHR(m_surface);
+            vk::SurfaceCapabilitiesKHR capabilities = avk::context::gpu()->getSurfaceCapabilitiesKHR(m_surface);
+
+            vk::SwapchainCreateInfoKHR swapchain_info{
+                .flags = {},
+            };
         }
 
         bool closed() override
