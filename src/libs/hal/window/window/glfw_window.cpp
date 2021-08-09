@@ -259,7 +259,7 @@ namespace
             avk::context::init_instance({
                 .extensions = {
                     .names = ext_names,
-                    .count = 2
+                    .count = ext_count
                 }
             });
 
