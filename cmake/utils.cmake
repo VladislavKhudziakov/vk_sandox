@@ -7,7 +7,7 @@ function (make_bin)
 
     cmake_parse_arguments(NEW_APP "${OPTIONS}" "${ONE_VAL_ARGS}" "${MULTI_VAL_ARGS}" ${ARGN})
 
-    file(GLOB_RECURSE ${NAME_APP_NAME}_SOURCES ${CMAKE_CURRENT_LIST_DIR}/*.cpp  ${CMAKE_CURRENT_LIST_DIR}/*.c)
+    file(GLOB_RECURSE ${NAME_APP_NAME}_SOURCES ${CMAKE_CURRENT_LIST_DIR}/*.cpp ${CMAKE_CURRENT_LIST_DIR}/*.hpp ${CMAKE_CURRENT_LIST_DIR}/*.c ${CMAKE_CURRENT_LIST_DIR}/*.h)
     if (${NEW_APP_LIB_TYPE})
         set(CURR_NEW_APP_LIB_TYPE ${NEW_APP_LIB_TYPE})
     else()

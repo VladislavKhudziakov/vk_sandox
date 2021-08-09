@@ -2,14 +2,14 @@
 
 #include "context.hpp"
 
-#include <hal/render/vk/raii.hpp>
+#include <render/vk/raii.hpp>
+#include <render/vk/utils.hpp>
 
 #include <spdlog/spdlog.h>
 
 #include <functional>
 #include <vector>
 #include <cstring>
-#include <iostream>
 #include <unordered_map>
 
 using namespace sandbox;
@@ -145,22 +145,14 @@ public:
             VULKAN_HPP_DEFAULT_DISPATCHER.init( vkGetInstanceProcAddr );
         #endif
 
-        auto layers = gather_layers_names([](){
-                uint32_t layers_count{};
-                vk::Result res = vk::enumerateInstanceLayerProperties(&layers_count, nullptr);
-                std::vector<vk::LayerProperties> props{layers_count};
-                res = vk::enumerateInstanceLayerProperties(&layers_count, props.data());
-                return props;
+        auto layers = gather_layers_names([]() -> std::vector<vk::LayerProperties>{
+                return vk::enumerateInstanceLayerProperties();
             },
             data.layers,
             implicit_required_instance_layers);
 
-        auto extensions = gather_extensions_names([](){
-                uint32_t ext_count{};
-                vk::Result res = vk::enumerateInstanceExtensionProperties(nullptr, &ext_count, nullptr);
-                std::vector<vk::ExtensionProperties> props{ext_count};
-                res = vk::enumerateInstanceExtensionProperties(nullptr, &ext_count, props.data());
-                return props;
+        auto extensions = gather_extensions_names([]() -> std::vector<vk::ExtensionProperties> {
+                return vk::enumerateInstanceExtensionProperties();
             },
             data.extensions,
             implicit_required_instance_extensions);
@@ -276,10 +268,7 @@ public:
 private:
     void select_gpu(device_data data)
     {
-        uint32_t gpus_count{0};
-        vk::Result res = m_instance->enumeratePhysicalDeviceGroups(&gpus_count, nullptr);
-        std::vector<vk::PhysicalDeviceGroupProperties> gpus_props{gpus_count};
-        res = m_instance->enumeratePhysicalDeviceGroups(&gpus_count, gpus_props.data());
+        std::vector<vk::PhysicalDeviceGroupProperties> gpus_props = m_instance->enumeratePhysicalDeviceGroups();
 
         auto check_queue_families_support = [](vk::PhysicalDevice gpu)
         {
@@ -307,25 +296,17 @@ private:
         auto check_extensions_support = [&data](vk::PhysicalDevice gpu)
         {
             try {
-                gather_layers_names([&gpu]() {
-                        uint32_t layers_count{0};
-                        vk::Result res = gpu.enumerateDeviceLayerProperties(&layers_count, nullptr);
-                        std::vector<vk::LayerProperties> props{layers_count};
-                        res = gpu.enumerateDeviceLayerProperties(&layers_count, props.data());
-                        return props;
+                gather_layers_names([&gpu]() -> std::vector<vk::LayerProperties> {
+                        return gpu.enumerateDeviceLayerProperties();
                     },
                     data.layers,
-        implicit_required_device_layers);
+                    implicit_required_device_layers);
 
-                gather_extensions_names([&gpu]() {
-                        uint32_t ext_count{0};
-                        vk::Result res = gpu.enumerateDeviceExtensionProperties(nullptr, &ext_count, nullptr);
-                        std::vector<vk::ExtensionProperties> extensions{ext_count};
-                        res = gpu.enumerateDeviceExtensionProperties(nullptr, &ext_count, extensions.data());
-                        return extensions;
+                gather_extensions_names([&gpu]() -> std::vector<vk::ExtensionProperties> {
+                        return gpu.enumerateDeviceExtensionProperties();
                     },
                     data.extensions,
-                implicit_required_device_extensions);
+                    implicit_required_device_extensions);
             } catch (...) {
                 return false;
             }
@@ -382,22 +363,14 @@ private:
 
     void create_device(device_data data)
     {
-        auto device_layers = gather_layers_names([this]() {
-                uint32_t layers_count{0};
-                vk::Result res = m_gpu.enumerateDeviceLayerProperties(&layers_count, nullptr);
-                std::vector<vk::LayerProperties> props{layers_count};
-                res = m_gpu.enumerateDeviceLayerProperties(&layers_count, props.data());
-                return props;
+        auto device_layers = gather_layers_names([this]() -> std::vector<vk::LayerProperties> {
+                return m_gpu.enumerateDeviceLayerProperties();
             },
             data.layers,
                 implicit_required_device_layers);
 
-        auto device_extensions = gather_extensions_names([this]() {
-                uint32_t ext_count{0};
-                vk::Result res = m_gpu.enumerateDeviceExtensionProperties(nullptr, &ext_count, nullptr);
-                std::vector<vk::ExtensionProperties> extensions{ext_count};
-                res = m_gpu.enumerateDeviceExtensionProperties(nullptr, &ext_count, extensions.data());
-                return extensions;
+        auto device_extensions = gather_extensions_names([this]() -> std::vector<vk::ExtensionProperties> {
+                return m_gpu.enumerateDeviceExtensionProperties();
             },
             data.extensions,
             implicit_required_device_extensions);
@@ -469,13 +442,13 @@ vk::PhysicalDevice *hal::render::avk::context::gpu()
 
 vk::Device *hal::render::avk::context::device()
 {
-    return m_impl->m_device;
+    return m_impl->m_device.handler_ptr();
 }
 
 
 vk::Instance* hal::render::avk::context::instance()
 {
-    return m_impl->m_instance;
+    return m_impl->m_instance.handler_ptr();
 }
 
 

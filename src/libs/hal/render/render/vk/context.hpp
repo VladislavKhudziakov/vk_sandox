@@ -1,6 +1,6 @@
 #pragma once
 
-#include <hal/render/vk/raii.hpp>
+#include <render/vk/vulkan_dependencies.hpp>
 
 #include <memory>
 
