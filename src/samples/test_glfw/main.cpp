@@ -4,7 +4,6 @@
 #include <window/vk_main_loop_update_listener.hpp>
 
 #include <stb/stb_image.h>
-
 using namespace sandbox::hal::render;
 
 
@@ -229,8 +228,7 @@ int main() {
     auto* dummy_listener_impl = dummy_listener.get();
 
     sandbox::hal::window window(800, 600, "sandbox window", std::move(dummy_listener));
-
-    dummy_listener_impl->load_texture(R"(D:\dev\vk_sandox\src\samples\test_glfw\resources\viking_room.png)");
+    dummy_listener_impl->load_texture(WORK_DIR"/resources/viking_room.png");
 
     while (!window.closed()) {
         window.main_loop();

@@ -5,3 +5,5 @@ make_bin(
         hal_window
         stb
 )
+
+target_compile_definitions(test_glfw PRIVATE WORK_DIR="${CMAKE_CURRENT_LIST_DIR}")
