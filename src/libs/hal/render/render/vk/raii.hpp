@@ -17,11 +17,54 @@ namespace sandbox::hal::render::avk
             constexpr static bool value = false;
         };
 
+
         template <typename T1, typename T2>
         struct is_explicitly_castable<T1, T2, std::void_t<decltype(static_cast<T2>(std::declval<T1>()))>>
         {
             constexpr static bool value = true;
         };
+
+
+        template<typename T1, typename T2>
+        constexpr bool is_explicitly_castable_v = is_explicitly_castable<T1, T2>::value;
+
+
+        template <typename T1, typename T2, typename = void>
+        struct is_as_castable
+        {
+            constexpr static bool value = false;
+        };
+
+
+        template <typename T1, typename T2>
+        struct is_as_castable<T1, T2, std::void_t<decltype((std::declval<T1>().template as<T2>))>>
+        {
+            constexpr static bool value = false;
+        };
+
+
+        template<typename T1, typename T2>
+        constexpr bool is_as_castable_v = is_as_castable<T1, T2>::value;
+
+
+        template<typename T1, typename T2>
+        decltype(auto) try_cast(const T1& value)
+        {
+            static_assert(std::is_same_v<T2, T1> || detail::is_explicitly_castable_v<T1, T2> || detail::is_as_castable_v<T1, T2>);
+
+            if constexpr(std::is_same_v<T2, T1>) {
+                return value;
+            }
+
+            if constexpr (detail::is_explicitly_castable_v<T1, T2>) {
+                return static_cast<T2>(value);
+            }
+
+            if constexpr (detail::is_as_castable_v<T1, T2>) {
+                return value.template as<T2>();
+            }
+        }
+
 
         template<typename T>
         class vma_resource
@@ -59,6 +102,12 @@ namespace sandbox::hal::render::avk
             const VmaAllocationInfo& get_alloc_info() const
             {
                 return m_allocation_info;
+            }
+
+            template<typename AsType>
+            AsType as() const
+            {
+                return detail::try_cast<decltype(m_handler), AsType>(m_handler);
             }
 
         private:
@@ -115,22 +164,16 @@ namespace sandbox::hal::render::avk
 
         ~raii_handler()
         {
-            if constexpr(detail::is_explicitly_castable<T, bool>::value) {
+            if constexpr(detail::is_explicitly_castable_v<T, bool>) {
                 if(static_cast<bool>(m_handler)) {
                     assert(m_destroy);
-                    spdlog::info(std::string("instance ") + typeid(T).name() + " destroyed.");
                     m_destroy(m_handler);
                 }
             } else {
                 if (m_destroy) {
-                    spdlog::info(std::string("instance ") + typeid(T).name() + " destroyed.");
                     m_destroy(m_handler);
-                } else {
-                    spdlog::info(std::string("instance ") + typeid(T).name() + " not destroyed.");
                 }
             }
-
-
         }
 
         T* operator->()
@@ -167,6 +210,12 @@ namespace sandbox::hal::render::avk
             }
         }
 
+        template <typename AsType>
+        AsType as() const
+        {
+            return detail::try_cast<decltype(m_handler), AsType>(m_handler);
+        }
+
     private:
         T m_handler{};
         std::function<void(const T&)> m_destroy{};
@@ -176,14 +225,33 @@ namespace sandbox::hal::render::avk
     using device = raii_handler<vk::Device>;
     using surface = raii_handler<vk::SurfaceKHR>;
     using allocator = raii_handler<VmaAllocator>;
+
     using swapchain = raii_handler<vk::SwapchainKHR>;
     using framebuffer = raii_handler<vk::Framebuffer>;
+
     using fence = raii_handler<vk::Fence>;
     using semaphore = raii_handler<vk::Semaphore>;
+
     using command_pool = raii_handler<vk::CommandPool>;
     using command_buffer_list = raii_handler<std::vector<vk::CommandBuffer>>;
+
     using vma_image = raii_handler<detail::vma_image>;
     using vma_buffer = raii_handler<detail::vma_buffer>;
+
+    using shader_module = raii_handler<vk::ShaderModule>;
+    using render_pass = raii_handler<vk::RenderPass>;
+
+    using graphics_pipeline = raii_handler<vk::Pipeline>;
+    using compute_pipeline = raii_handler<vk::Pipeline>;
+    using pipeline_cache = raii_handler<vk::PipelineCache>;
+    using pipeline_layout = raii_handler<vk::PipelineLayout>;
+
+    using descriptor_pool = raii_handler<vk::DescriptorPool>;
+    using descriptor_set_list = raii_handler<std::vector<vk::DescriptorSet>>;
+    using descriptor_set_layout = raii_handler<vk::DescriptorSetLayout>;
+
+    using image_view = raii_handler<vk::ImageView>;
+    using sampler = raii_handler<vk::Sampler>;
 
     template <typename... Args>
     avk::instance create_instance(Args&& ...args)
@@ -254,7 +322,15 @@ namespace sandbox::hal::render::avk
     [[maybe_unused]] inline auto create_fence = VK_RESOURCE_INITIALIZER(vk::Fence, avk::context::device()->destroyFence);
     [[maybe_unused]] inline auto create_semaphore = VK_RESOURCE_INITIALIZER(vk::Semaphore, avk::context::device()->destroySemaphore);
     [[maybe_unused]] inline auto create_command_pool = VK_RESOURCE_INITIALIZER(vk::CommandPool, avk::context::device()->destroyCommandPool);
-
+    [[maybe_unused]] inline auto create_shader_module = VK_RESOURCE_INITIALIZER(vk::ShaderModule, avk::context::device()->destroyShaderModule);
+    [[maybe_unused]] inline auto create_render_pass = VK_RESOURCE_INITIALIZER(vk::RenderPass, avk::context::device()->destroyRenderPass);
+    [[maybe_unused]] inline auto create_graphics_pipeline = VK_RESOURCE_INITIALIZER(vk::Pipeline, avk::context::device()->destroyPipeline);
+    [[maybe_unused]] inline auto create_pipeline_cache = VK_RESOURCE_INITIALIZER(vk::PipelineCache, avk::context::device()->destroyPipelineCache);
+    [[maybe_unused]] inline auto create_pipeline_layout = VK_RESOURCE_INITIALIZER(vk::PipelineLayout, avk::context::device()->destroyPipelineLayout);
+    [[maybe_unused]] inline auto create_descriptor_pool = VK_RESOURCE_INITIALIZER(vk::DescriptorPool, avk::context::device()->destroyDescriptorPool);
+    [[maybe_unused]] inline auto create_descriptor_set_layout = VK_RESOURCE_INITIALIZER(vk::DescriptorSetLayout, avk::context::device()->destroyDescriptorSetLayout);
+    [[maybe_unused]] inline auto create_image_view = VK_RESOURCE_INITIALIZER(vk::ImageView, avk::context::device()->destroyImageView);
+    [[maybe_unused]] inline auto create_sampler = VK_RESOURCE_INITIALIZER(vk::Sampler, avk::context::device()->destroySampler);
 
     inline command_buffer_list allocate_command_buffers(const vk::CommandBufferAllocateInfo& allocate_info, bool free = true)
     {
@@ -263,6 +339,18 @@ namespace sandbox::hal::render::avk
             [cmd_pool = allocate_info.commandPool, free](const std::vector<vk::CommandBuffer>& command_buffers) {
                 if (free) {
                     avk::context::device()->freeCommandBuffers(cmd_pool, command_buffers);
+                }
+            }
+        };
+    }
+
+    inline descriptor_set_list allocate_descriptor_sets(const vk::DescriptorSetAllocateInfo& allocate_info, bool free = true)
+    {
+        return {
+            avk::context::device()->allocateDescriptorSets(allocate_info),
+            [cmd_pool = allocate_info.descriptorPool, free](const std::vector<vk::DescriptorSet>& desc_sets) {
+                if (free) {
+                    avk::context::device()->freeDescriptorSets(cmd_pool, desc_sets);
                 }
             }
         };

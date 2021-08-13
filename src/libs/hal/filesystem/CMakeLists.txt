@@ -1,0 +1,9 @@
+make_bin(
+    NAME
+        hal_filesystem
+    LIB
+    LIB_TYPE
+        STATIC
+    DEPENDS
+        sandbox_utils
+)

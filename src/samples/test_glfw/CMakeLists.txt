@@ -3,6 +3,7 @@ make_bin(
         test_glfw
     DEPENDS
         hal_window
+        hal_filesystem
         stb
 )
 

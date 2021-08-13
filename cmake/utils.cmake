@@ -72,11 +72,15 @@ function (make_bin)
         list(APPEND SPIRV_BINARY_FILES ${SPIRV})
     endforeach(GLSL)
 
-    add_custom_target(
+    list(LENGTH SPIRV_BINARY_FILES SPIRV_BINARIES_LENGTH)
+
+    if (SPIRV_BINARIES_LENGTH GREATER 0)
+        add_custom_target(
             ${NEW_APP_NAME}_SHADERS
             DEPENDS ${SPIRV_BINARY_FILES})
 
-    add_dependencies(${NEW_APP_NAME} ${NEW_APP_NAME}_SHADERS)
+        add_dependencies(${NEW_APP_NAME} ${NEW_APP_NAME}_SHADERS)
+    endif()
 
     foreach(EXT ${NEW_APP_RESOURCES_EXTENSIONS})
         list(APPEND NEW_APP_RESOURCES_EXTENSIONS ${CMAKE_CURRENT_LIST_DIR}/*${EXT})
@@ -95,9 +99,14 @@ function (make_bin)
         list(APPEND FINAL_RESOURCES_FILES ${RESOURCE_COPY_PATH})
     endforeach()
 
-    add_custom_target(
-            ${NEW_APP_NAME}_RESOURCES
-            DEPENDS ${FINAL_RESOURCES_FILES})
+    list(LENGTH FINAL_RESOURCES_FILES RESOURCES_FILES_LENGTH)
 
-    add_dependencies(${NEW_APP_NAME} ${NEW_APP_NAME}_RESOURCES)
+    if (RESOURCES_FILES_LENGTH GREATER 0)
+        add_custom_target(
+                ${NEW_APP_NAME}_RESOURCES
+                DEPENDS ${FINAL_RESOURCES_FILES})
+
+        add_dependencies(${NEW_APP_NAME} ${NEW_APP_NAME}_RESOURCES)
+    endif()
+
 endfunction()

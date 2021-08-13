@@ -30,8 +30,15 @@ namespace
             return m_curr_image;
         }
 
+        void set_swapcain_reset_listener(const std::function<void(size_t, size_t)>& listener)
+        {
+            m_swapchain_reset_listener = listener;
+        }
+
         void reset(GLFWwindow* window, const vk::SurfaceKHR& surface)
         {
+            avk::context::queue(vk::QueueFlagBits::eGraphics, 0).waitIdle();
+
             vk::SurfaceCapabilitiesKHR capabilities = avk::context::gpu()->getSurfaceCapabilitiesKHR(surface);
 
             vk::SurfaceFormatKHR surface_format = get_surface_format(surface);
@@ -72,6 +79,10 @@ namespace
             if (m_wait_semaphores.size() != m_images_count) {
                 m_wait_semaphores.resize(m_images_count);
             }
+
+            if (m_swapchain_reset_listener) {
+                m_swapchain_reset_listener(m_size.width, m_size.height);
+            }
         }
 
         const std::vector<vk::Image>& swapchain_images() const
@@ -91,7 +102,7 @@ namespace
             vk::ResultValue<uint32_t> acquire_result{vk::Result::eSuccess, static_cast<uint32_t>(-1)};
 
             do {
-                if (acquire_result.result == vk::Result::eSuboptimalKHR) {
+                if (acquire_result.result == vk::Result::eSuboptimalKHR || acquire_result.result == vk::Result::eErrorOutOfDateKHR) {
                     reset(window, surface);
                 } else if (acquire_result.result != vk::Result::eSuccess) {
                     throw avk::vulkan_result_error(acquire_result.result);
@@ -112,7 +123,12 @@ namespace
             return {curr_wait_semaphore, m_wait_fences[m_curr_image], acquire_result.value};
         }
 
-        void present(vk::Semaphore* wait_semaphores, uint32_t wait_semaphores_count, uint32_t present_queue_index)
+        void present(
+            GLFWwindow* window,
+            const vk::SurfaceKHR& surface,
+            vk::Semaphore* wait_semaphores,
+            uint32_t wait_semaphores_count,
+            uint32_t present_queue_index)
         {
             vk::Result present_result = vk::Result::eSuccess;
 
@@ -125,7 +141,18 @@ namespace
                 .pResults = &present_result,
             };
 
-            VK_CALL(avk::context::queue(vk::QueueFlagBits::eGraphics, present_queue_index).presentKHR(presentInfo));
+            try {
+                VK_CALL(avk::context::queue(vk::QueueFlagBits::eGraphics, present_queue_index).presentKHR(presentInfo));
+            } catch (const vk::OutOfDateKHRError& error) {
+                present_result = vk::Result::eSuccess;
+                reset(window, surface);
+            } catch (...) {
+                throw;
+            }
+
+            if (present_result == vk::Result::eSuboptimalKHR || present_result == vk::Result::eErrorOutOfDateKHR) {
+                reset(window, surface);
+            }
         }
 
         vk::Extent2D get_size() const
@@ -215,6 +242,8 @@ namespace
         uint32_t m_curr_image{0};
         std::vector<avk::fence> m_wait_fences{};
         std::vector<avk::semaphore> m_wait_semaphores{};
+
+        std::function<void(size_t, size_t)> m_swapchain_reset_listener{};
     };
 
     class window_context_init_raii
@@ -274,6 +303,10 @@ namespace
             avk::context::init_device({
                 .required_supported_surfaces = m_surface.handler_ptr(),
                 .required_supported_surfaces_count = 1
+            });
+
+            m_swapchain.set_swapcain_reset_listener([this](size_t width, size_t height) {
+                static_cast<vk_main_loop_update_listener*>(m_update_listener.get())->on_swapchain_reset(width, height);
             });
 
             m_swapchain.reset(m_window_handler.get(), m_surface);
@@ -500,7 +533,7 @@ namespace
                 },
                 signal_fence);
 
-            m_swapchain.present(&curr_semaphore, 1, 0);
+            m_swapchain.present(m_window_handler.get(), m_surface, &curr_semaphore, 1, 0);
         }
 
     private:
