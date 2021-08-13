@@ -20,29 +20,25 @@ using namespace sandbox::hal::render::avk;
 namespace
 {
 #ifndef NDEBUG
-    std::vector<const char*> implicit_required_instance_layers {
-        "VK_LAYER_KHRONOS_validation"
-    };
+    std::vector<const char*> implicit_required_instance_layers{
+        "VK_LAYER_KHRONOS_validation"};
 
-    std::vector<const char*> implicit_required_instance_extensions {
-        VK_EXT_DEBUG_UTILS_EXTENSION_NAME
-    };
+    std::vector<const char*> implicit_required_instance_extensions{
+        VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
 #else
-    std::vector<const char*> implicit_required_instance_layers {};
+    std::vector<const char*> implicit_required_instance_layers{};
 
-    std::vector<const char*> implicit_required_instance_extensions {};
+    std::vector<const char*> implicit_required_instance_extensions{};
 #endif
 
-    std::vector<const char*> implicit_required_device_extensions {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME
-    };
+    std::vector<const char*> implicit_required_device_extensions{
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
 #ifndef NDEBUG
-    std::vector<const char*> implicit_required_device_layers {
-        "VK_LAYER_KHRONOS_validation"
-    };
+    std::vector<const char*> implicit_required_device_layers{
+        "VK_LAYER_KHRONOS_validation"};
 #else
-    std::vector<const char*> implicit_required_device_layers {};
+    std::vector<const char*> implicit_required_device_layers{};
 #endif
 
 
@@ -63,7 +59,7 @@ namespace
                     return strcmp(search_name, props.extensionName) == 0;
                 };
 
-                if(std::find_if(extensions_props.begin(), extensions_props.end(), find_property) != extensions_props.end()) {
+                if (std::find_if(extensions_props.begin(), extensions_props.end(), find_property) != extensions_props.end()) {
                     default_names.push_back(extensions_info.names[i]);
                 } else {
                     throw std::runtime_error(std::string("Bad extension requested ") + extensions_info.names[i]);
@@ -92,7 +88,7 @@ namespace
                     return strcmp(search_name, props.layerName) == 0;
                 };
 
-                if(std::find_if(layers_props.begin(), layers_props.end(), find_property) != layers_props.end()) {
+                if (std::find_if(layers_props.begin(), layers_props.end(), find_property) != layers_props.end()) {
                     default_names.push_back(layers_info.names[i]);
                 } else {
                     throw std::runtime_error(std::string("Bad layer requested ") + layers_info.names[i]);
@@ -125,7 +121,7 @@ namespace
 
         return {queue_family_index, max_queue_count};
     }
-}
+} // namespace
 
 
 std::unique_ptr<avk::context::impl> avk::context::m_impl{};
@@ -134,52 +130,49 @@ avk::context::init_status avk::context::m_init_status{avk::context::init_status:
 class avk::context::impl
 {
     friend hal::render::avk::context;
-public:
 
+public:
     void init_instance(instance_data data)
     {
-        #if ( VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1 )
-            static vk::DynamicLoader  dl;
-            PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr =
-                    dl.getProcAddress<PFN_vkGetInstanceProcAddr>( "vkGetInstanceProcAddr" );
-            VULKAN_HPP_DEFAULT_DISPATCHER.init( vkGetInstanceProcAddr );
-        #endif
+#if (VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1)
+        static vk::DynamicLoader dl;
+        PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr =
+            dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
+        VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
+#endif
 
-        auto layers = gather_layers_names([]() -> std::vector<vk::LayerProperties>{
-                return vk::enumerateInstanceLayerProperties();
-            },
-            data.layers,
-            implicit_required_instance_layers);
+        auto layers = gather_layers_names([]() -> std::vector<vk::LayerProperties> {
+            return vk::enumerateInstanceLayerProperties();
+        },
+                                          data.layers,
+                                          implicit_required_instance_layers);
 
         auto extensions = gather_extensions_names([]() -> std::vector<vk::ExtensionProperties> {
-                return vk::enumerateInstanceExtensionProperties();
-            },
-            data.extensions,
-            implicit_required_instance_extensions);
+            return vk::enumerateInstanceExtensionProperties();
+        },
+                                                  data.extensions,
+                                                  implicit_required_instance_extensions);
 
         vk::ApplicationInfo app_info{
             .pApplicationName = "vk_sandbox",
             .applicationVersion = VK_MAKE_VERSION(0, 1, 0),
             .pEngineName = "vk_sandbox",
             .engineVersion = VK_MAKE_VERSION(0, 1, 0),
-            .apiVersion = VK_API_VERSION_1_2
-        };
+            .apiVersion = VK_API_VERSION_1_2};
 
-        vk::InstanceCreateInfo instance_info {
+        vk::InstanceCreateInfo instance_info{
             .flags = {},
             .pApplicationInfo = &app_info,
             .enabledLayerCount = static_cast<uint32_t>(layers.size()),
             .ppEnabledLayerNames = layers.data(),
             .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
-            .ppEnabledExtensionNames = extensions.data()
-        };
+            .ppEnabledExtensionNames = extensions.data()};
 
         static auto debug_callback = [](
-                VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                VkDebugUtilsMessageTypeFlagsEXT messageTypes,
-                const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-                void* pUserData) -> VkBool32
-        {
+                                         VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                         VkDebugUtilsMessageTypeFlagsEXT messageTypes,
+                                         const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+                                         void* pUserData) -> VkBool32 {
             switch (messageSeverity) {
                 case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
                     [[fallthrough]];
@@ -200,15 +193,9 @@ public:
 
         vk::DebugUtilsMessengerCreateInfoEXT debug_messenger_info{
             .flags = {},
-            .messageSeverity =  vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
-                                vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
-                                vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
-                                vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning,
-            .messageType =  vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-                            vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
-                            vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
-            .pfnUserCallback = debug_callback
-        };
+            .messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo | vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning,
+            .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
+            .pfnUserCallback = debug_callback};
 
         instance_info.setPNext(&debug_messenger_info);
 
@@ -270,13 +257,11 @@ private:
     {
         std::vector<vk::PhysicalDeviceGroupProperties> gpus_props = m_instance->enumeratePhysicalDeviceGroups();
 
-        auto check_queue_families_support = [](vk::PhysicalDevice gpu)
-        {
+        auto check_queue_families_support = [](vk::PhysicalDevice gpu) {
             return find_best_queue_family(gpu, vk::QueueFlagBits::eGraphics).first >= 0;
         };
 
-        auto check_surface_support = [&data](vk::PhysicalDevice gpu)
-        {
+        auto check_surface_support = [&data](vk::PhysicalDevice gpu) {
             auto graphics_queue_family = find_best_queue_family(gpu, vk::QueueFlagBits::eGraphics).first;
             assert(graphics_queue_family >= 0);
 
@@ -293,20 +278,19 @@ private:
             return true;
         };
 
-        auto check_extensions_support = [&data](vk::PhysicalDevice gpu)
-        {
+        auto check_extensions_support = [&data](vk::PhysicalDevice gpu) {
             try {
                 gather_layers_names([&gpu]() -> std::vector<vk::LayerProperties> {
-                        return gpu.enumerateDeviceLayerProperties();
-                    },
-                    data.layers,
-                    implicit_required_device_layers);
+                    return gpu.enumerateDeviceLayerProperties();
+                },
+                                    data.layers,
+                                    implicit_required_device_layers);
 
                 gather_extensions_names([&gpu]() -> std::vector<vk::ExtensionProperties> {
-                        return gpu.enumerateDeviceExtensionProperties();
-                    },
-                    data.extensions,
-                    implicit_required_device_extensions);
+                    return gpu.enumerateDeviceExtensionProperties();
+                },
+                                        data.extensions,
+                                        implicit_required_device_extensions);
             } catch (...) {
                 return false;
             }
@@ -314,10 +298,8 @@ private:
         };
 
         auto try_find_gpu =
-                [&gpus_props, &check_surface_support, &check_extensions_support, &check_queue_families_support]
-                (vk::PhysicalDeviceType device_type) -> vk::PhysicalDevice
-        {
-            for(const auto& gpu : gpus_props) {
+            [&gpus_props, &check_surface_support, &check_extensions_support, &check_queue_families_support](vk::PhysicalDeviceType device_type) -> vk::PhysicalDevice {
+            for (const auto& gpu : gpus_props) {
                 for (const auto device : gpu.physicalDevices) {
                     if (!device) {
                         continue;
@@ -364,18 +346,18 @@ private:
     void create_device(device_data data)
     {
         auto device_layers = gather_layers_names([this]() -> std::vector<vk::LayerProperties> {
-                return m_gpu.enumerateDeviceLayerProperties();
-            },
-            data.layers,
-                implicit_required_device_layers);
+            return m_gpu.enumerateDeviceLayerProperties();
+        },
+                                                 data.layers,
+                                                 implicit_required_device_layers);
 
         auto device_extensions = gather_extensions_names([this]() -> std::vector<vk::ExtensionProperties> {
-                return m_gpu.enumerateDeviceExtensionProperties();
-            },
-            data.extensions,
-            implicit_required_device_extensions);
+            return m_gpu.enumerateDeviceExtensionProperties();
+        },
+                                                         data.extensions,
+                                                         implicit_required_device_extensions);
 
-        vk::QueueFamilyProperties props {};
+        vk::QueueFamilyProperties props{};
 
         m_queue_families_data[vk::QueueFlagBits::eGraphics] = find_best_queue_family(m_gpu, vk::QueueFlagBits::eGraphics);
         m_queue_families_data[vk::QueueFlagBits::eCompute] = find_best_queue_family(m_gpu, vk::QueueFlagBits::eCompute);
@@ -393,8 +375,7 @@ private:
                 .flags = {},
                 .queueFamilyIndex = static_cast<uint32_t>(curr->second.first),
                 .queueCount = static_cast<uint32_t>(curr->second.second),
-                .pQueuePriorities = queues_priorities.back().data()
-            };
+                .pQueuePriorities = queues_priorities.back().data()};
         }
 
         vk::PhysicalDeviceFeatures features = m_gpu.getFeatures();
@@ -407,8 +388,7 @@ private:
             .ppEnabledLayerNames = device_layers.data(),
             .enabledExtensionCount = device_extensions.size(),
             .ppEnabledExtensionNames = device_extensions.data(),
-            .pEnabledFeatures = &features
-        };
+            .pEnabledFeatures = &features};
 
         m_device = avk::create_device(m_gpu, &device_info, nullptr);
     }
@@ -434,13 +414,13 @@ private:
 };
 
 
-vk::PhysicalDevice *hal::render::avk::context::gpu()
+vk::PhysicalDevice* hal::render::avk::context::gpu()
 {
     return &m_impl->m_gpu;
 }
 
 
-vk::Device *hal::render::avk::context::device()
+vk::Device* hal::render::avk::context::device()
 {
     return m_impl->m_device.handler_ptr();
 }

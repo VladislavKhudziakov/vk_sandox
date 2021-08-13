@@ -6,7 +6,8 @@
 
 namespace sandbox::hal
 {
-    class window {
+    class window
+    {
     public:
         class main_loop_update_listener
         {
@@ -44,5 +45,4 @@ namespace sandbox::hal
     private:
         std::unique_ptr<impl> m_impl;
     };
-}
-
+} // namespace sandbox::hal

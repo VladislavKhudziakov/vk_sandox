@@ -20,9 +20,8 @@ namespace sandbox::hal::filesystem
         size_t get_size() override;
 
     private:
-        std::unique_ptr<FILE, void(*)(FILE*)> m_file_handler{nullptr, [](FILE* f) {if (f != nullptr) fclose(f);}};
+        std::unique_ptr<FILE, void (*)(FILE*)> m_file_handler{nullptr, [](FILE* f) {if (f != nullptr) fclose(f); }};
         size_t m_size{0};
         std::vector<uint8_t> m_data_buffer{};
     };
-}
-
+} // namespace sandbox::hal::filesystem

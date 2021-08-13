@@ -24,7 +24,4 @@ namespace sandbox::utils
         std::unique_ptr<uint8_t, std::function<void(uint8_t*)>> m_data{};
         size_t m_size{0};
     };
-}
-
-
-
+} // namespace sandbox::utils

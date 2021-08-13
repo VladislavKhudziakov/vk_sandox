@@ -62,5 +62,4 @@ namespace sandbox::hal::render::avk
         static std::unique_ptr<impl> m_impl;
         static init_status m_init_status;
     };
-}
-
+} // namespace sandbox::hal::render::avk

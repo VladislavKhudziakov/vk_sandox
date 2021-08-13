@@ -51,8 +51,7 @@ public:
     {
         return {
             m_attachment_width,
-            m_attachment_height
-        };
+            m_attachment_height};
     }
 
     std::vector<vk::Semaphore> get_wait_semaphores() const override
@@ -80,26 +79,26 @@ private:
                 .imageType = vk::ImageType::e2D,
                 .format = vk::Format::eR8G8B8A8Srgb,
                 .extent = {
-                        .width = static_cast<uint32_t>(width),
-                        .height = static_cast<uint32_t>(height),
-                        .depth = 1,
-                    },
-                    .mipLevels = 1,
-                    .arrayLayers = 1,
-                    .samples = vk::SampleCountFlagBits::e1,
-                    .tiling = vk::ImageTiling::eOptimal,
-                    .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eColorAttachment,
-                    .sharingMode = vk::SharingMode::eExclusive,
-                    .queueFamilyIndexCount = 1,
-                    .pQueueFamilyIndices = &queue_family,
-                    .initialLayout = vk::ImageLayout::eUndefined,
+                    .width = static_cast<uint32_t>(width),
+                    .height = static_cast<uint32_t>(height),
+                    .depth = 1,
                 },
+                .mipLevels = 1,
+                .arrayLayers = 1,
+                .samples = vk::SampleCountFlagBits::e1,
+                .tiling = vk::ImageTiling::eOptimal,
+                .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eColorAttachment,
+                .sharingMode = vk::SharingMode::eExclusive,
+                .queueFamilyIndexCount = 1,
+                .pQueueFamilyIndices = &queue_family,
+                .initialLayout = vk::ImageLayout::eUndefined,
+            },
 
             VmaAllocationCreateInfo{
                 .usage = VMA_MEMORY_USAGE_GPU_ONLY,
             });
 
-        m_attachment_view = avk::create_image_view(avk::context::device()->createImageView(vk::ImageViewCreateInfo {
+        m_attachment_view = avk::create_image_view(avk::context::device()->createImageView(vk::ImageViewCreateInfo{
             .flags = {},
             .image = m_attachment.as<vk::Image>(),
             .viewType = vk::ImageViewType::e2D,
@@ -140,7 +139,7 @@ private:
             .layout = vk::ImageLayout::eColorAttachmentOptimal,
         };
 
-        vk::SubpassDescription subpass {
+        vk::SubpassDescription subpass{
             .flags = {},
             .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
             .colorAttachmentCount = 1,
@@ -168,7 +167,7 @@ private:
         };
 
         m_pass = avk::create_render_pass(avk::context::device()->createRenderPass(
-            vk::RenderPassCreateInfo {
+            vk::RenderPassCreateInfo{
                 .flags = {},
                 .attachmentCount = 1,
                 .pAttachments = &pass_attachment,
@@ -176,11 +175,11 @@ private:
                 .pSubpasses = &subpass,
                 .dependencyCount = 0,
                 .pDependencies = &dependency,
-            }
-        ));
+            }));
     }
 
-    void create_shader(avk::shader_module& module, const std::string path) {
+    void create_shader(avk::shader_module& module, const std::string path)
+    {
         if (module) {
             return;
         }
@@ -192,61 +191,56 @@ private:
         module = avk::create_shader_module(avk::context::device()->createShaderModule(vk::ShaderModuleCreateInfo{
             .flags = {},
             .codeSize = file.get_size(),
-            .pCode = reinterpret_cast<const uint32_t*>(file.read_all().get_data())
-        }));
+            .pCode = reinterpret_cast<const uint32_t*>(file.read_all().get_data())}));
     }
 
     void create_pipeline()
     {
         m_layout = avk::create_pipeline_layout(avk::context::device()->createPipelineLayout(vk::PipelineLayoutCreateInfo{
             .setLayoutCount = 0,
-            .pushConstantRangeCount = 0
-        }));
+            .pushConstantRangeCount = 0}));
 
         create_shader(m_vertex_shader, "./resources/test.vert.spv");
         create_shader(m_fragment_shader, "./resources/test.frag.spv");
 
         vk::PipelineShaderStageCreateInfo stages[] = {
-            vk::PipelineShaderStageCreateInfo {
+            vk::PipelineShaderStageCreateInfo{
                 .flags = {},
                 .stage = vk::ShaderStageFlagBits::eVertex,
                 .module = m_vertex_shader,
                 .pName = "main",
             },
-            vk::PipelineShaderStageCreateInfo {
+            vk::PipelineShaderStageCreateInfo{
                 .flags = {},
                 .stage = vk::ShaderStageFlagBits::eFragment,
                 .module = m_fragment_shader,
                 .pName = "main",
-            }
-        };
+            }};
 
-        vk::PipelineVertexInputStateCreateInfo vertex_input {
+        vk::PipelineVertexInputStateCreateInfo vertex_input{
             .flags = {},
             .vertexBindingDescriptionCount = 0,
             .vertexAttributeDescriptionCount = 0,
         };
 
-        vk::PipelineInputAssemblyStateCreateInfo input_assembly {
+        vk::PipelineInputAssemblyStateCreateInfo input_assembly{
             .flags = {},
             .topology = vk::PrimitiveTopology::eTriangleList,
-            .primitiveRestartEnable = VK_FALSE
-        };
+            .primitiveRestartEnable = VK_FALSE};
 
         vk::PipelineColorBlendAttachmentState attachment_blend{
             .blendEnable = VK_FALSE,
             .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
         };
 
-        vk::PipelineColorBlendStateCreateInfo color_blend {
+        vk::PipelineColorBlendStateCreateInfo color_blend{
             .flags = {},
             .logicOpEnable = VK_FALSE,
             .logicOp = {},
             .attachmentCount = 1,
-            .pAttachments = &attachment_blend
-        };
+            .pAttachments = &attachment_blend};
 
-        vk::PipelineRasterizationStateCreateInfo rasterization {
+        vk::PipelineRasterizationStateCreateInfo rasterization{
             .flags = {},
             .depthClampEnable = VK_FALSE,
             .rasterizerDiscardEnable = VK_FALSE,
@@ -262,7 +256,7 @@ private:
             .scissorCount = 1,
         };
 
-        vk::PipelineDepthStencilStateCreateInfo depth_stencil {
+        vk::PipelineDepthStencilStateCreateInfo depth_stencil{
             .flags = {},
             .depthTestEnable = VK_FALSE,
             .depthWriteEnable = VK_FALSE,
@@ -270,11 +264,10 @@ private:
             .depthBoundsTestEnable = VK_FALSE,
             .stencilTestEnable = VK_FALSE,
             .minDepthBounds = 0,
-            .maxDepthBounds = 1
-        };
+            .maxDepthBounds = 1};
 
         vk::SampleMask sampleMask{};
-        vk::PipelineMultisampleStateCreateInfo multisample {
+        vk::PipelineMultisampleStateCreateInfo multisample{
             .flags = {},
             .rasterizationSamples = vk::SampleCountFlagBits::e1,
             .sampleShadingEnable = VK_FALSE,
@@ -298,26 +291,27 @@ private:
 
         m_pipeline = avk::create_graphics_pipeline(
             avk::context::device()->createGraphicsPipeline(
-                {},
-                vk::GraphicsPipelineCreateInfo{
-                    .stageCount = std::size(stages),
-                    .pStages = stages,
-                    .pVertexInputState = &vertex_input,
-                    .pInputAssemblyState = &input_assembly,
-                    .pTessellationState = nullptr,
-                    .pViewportState = &viewport,
-                    .pRasterizationState = &rasterization,
-                    .pMultisampleState = &multisample,
-                    .pDepthStencilState = &depth_stencil,
-                    .pColorBlendState = &color_blend,
-                    .pDynamicState = &dynamic_state,
-                    .layout = m_layout,
+                                      {},
+                                      vk::GraphicsPipelineCreateInfo{
+                                          .stageCount = std::size(stages),
+                                          .pStages = stages,
+                                          .pVertexInputState = &vertex_input,
+                                          .pInputAssemblyState = &input_assembly,
+                                          .pTessellationState = nullptr,
+                                          .pViewportState = &viewport,
+                                          .pRasterizationState = &rasterization,
+                                          .pMultisampleState = &multisample,
+                                          .pDepthStencilState = &depth_stencil,
+                                          .pColorBlendState = &color_blend,
+                                          .pDynamicState = &dynamic_state,
+                                          .layout = m_layout,
 
-                    .renderPass = m_pass,
-                    .subpass = 0,
-                    .basePipelineHandle = {},
-                    .basePipelineIndex = -1,
-                }).value);
+                                          .renderPass = m_pass,
+                                          .subpass = 0,
+                                          .basePipelineHandle = {},
+                                          .basePipelineIndex = -1,
+                                      })
+                .value);
     }
 
 
@@ -339,35 +333,22 @@ private:
         command_buffer.reset();
 
         command_buffer.begin(vk::CommandBufferBeginInfo{
-            .flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse
-        });
+            .flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse});
 
         command_buffer.setViewport(
-            0, {
-            vk::Viewport{
-                .x = 0,
-                .y = 0,
-                .width = static_cast<float>(m_attachment_width),
-                .height = static_cast<float>(m_attachment_height),
-                .minDepth = 0,
-                .maxDepth = 1
-            }});
+            0, {vk::Viewport{.x = 0, .y = 0, .width = static_cast<float>(m_attachment_width), .height = static_cast<float>(m_attachment_height), .minDepth = 0, .maxDepth = 1}});
 
         command_buffer.setScissor(
-            0, {vk::Rect2D {
-                .offset = {
-                    .x = 0,
-                    .y = 0
-                },
-                .extent = {
-                    .width = static_cast<uint32_t>(m_attachment_width),
-                    .height = static_cast<uint32_t>(m_attachment_height),
-                },
-            }});
+            0, {vk::Rect2D{
+                   .offset = {.x = 0, .y = 0},
+                   .extent = {
+                       .width = static_cast<uint32_t>(m_attachment_width),
+                       .height = static_cast<uint32_t>(m_attachment_height),
+                   },
+               }});
 
         vk::ClearValue clear_value{
-            vk::ClearColorValue{std::array<float, 4>{0.1f, 0.2f, 0.6f, 1.0f}}
-        };
+            vk::ClearColorValue{std::array<float, 4>{0.1f, 0.2f, 0.6f, 1.0f}}};
 
         command_buffer.beginRenderPass(
             vk::RenderPassBeginInfo{

@@ -18,6 +18,14 @@ function (make_bin)
         file(GLOB_RECURSE ${NAME_APP_NAME}_OBJC_SOURCES ${CMAKE_CURRENT_LIST_DIR}/*.mm)
     endif()
 
+    find_program(CLANG_FORMAT "clang-format")
+
+    if (CLANG_FORMAT)
+        foreach(SRC_FILE ${${NAME_APP_NAME}_SOURCES})
+            execute_process(COMMAND ${CLANG_FORMAT} -style=file ${CLANG_FORMAT_FILE} -i ${SRC_FILE})
+        endforeach()
+    endif()
+
     file(
     GLOB_RECURSE 
     NEW_APP_SHADERS
@@ -68,6 +76,10 @@ function (make_bin)
                 COMMAND ${CMAKE_COMMAND} -E copy ${GLSL} ${SPIRV_DIR}/${GLSL_FILE}
                 COMMAND ${GLSL_VALIDATOR} -V -Os ${GLSL} -o ${SPIRV}
                 DEPENDS ${GLSL})
+
+        if (CLANG_FORMAT)
+            execute_process(COMMAND ${CLANG_FORMAT} -style=file ${CLANG_FORMAT_FILE} -i ${GLSL})
+        endif()
 
         list(APPEND SPIRV_BINARY_FILES ${SPIRV})
     endforeach(GLSL)

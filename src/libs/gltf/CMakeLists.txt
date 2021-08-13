@@ -1,0 +1,9 @@
+make_bin(
+    NAME
+        gltf
+    LIB
+    LIB_TYPE
+    STATIC
+    DEPENDS
+        hal_render
+)

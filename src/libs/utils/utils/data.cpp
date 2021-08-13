@@ -4,7 +4,7 @@
 
 sandbox::utils::data sandbox::utils::data::create_non_owning(uint8_t* ptr, size_t size)
 {
-    return {{ptr, [](uint8_t*){}}, size};
+    return {{ptr, [](uint8_t*) {}}, size};
 }
 
 
@@ -15,7 +15,7 @@ sandbox::utils::data sandbox::utils::data::create_owning(
 }
 
 
-sandbox::utils::data::data(std::unique_ptr<uint8_t, std::function<void(uint8_t *)>> data_handler,  size_t size)
+sandbox::utils::data::data(std::unique_ptr<uint8_t, std::function<void(uint8_t*)>> data_handler, size_t size)
     : m_data(std::move(data_handler))
     , m_size(size)
 {

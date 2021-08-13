@@ -167,8 +167,7 @@ namespace
 
             for (const auto& sf_format : sf_formats) {
                 auto is_srgb_fmt =
-                    sf_format.format == vk::Format::eR8G8B8A8Srgb ||
-                    sf_format.format == vk::Format::eB8G8R8A8Srgb;
+                    sf_format.format == vk::Format::eR8G8B8A8Srgb || sf_format.format == vk::Format::eB8G8R8A8Srgb;
 
                 if (is_srgb_fmt) {
                     return sf_format;
@@ -204,8 +203,7 @@ namespace
 
             return {
                 .width = static_cast<uint32_t>(width),
-                .height = static_cast<uint32_t>(height)
-            };
+                .height = static_cast<uint32_t>(height)};
         }
 
 
@@ -285,12 +283,7 @@ namespace
             uint32_t ext_count{0};
             auto ext_names = glfwGetRequiredInstanceExtensions(&ext_count);
 
-            avk::context::init_instance({
-                .extensions = {
-                    .names = ext_names,
-                    .count = ext_count
-                }
-            });
+            avk::context::init_instance({.extensions = {.names = ext_names, .count = ext_count}});
 
             m_surface = avk::create_surface(*avk::context::instance(), [this]() -> vk::SurfaceKHR {
                 VkSurfaceKHR surface;
@@ -300,10 +293,7 @@ namespace
                 return vk::SurfaceKHR{surface};
             });
 
-            avk::context::init_device({
-                .required_supported_surfaces = m_surface.handler_ptr(),
-                .required_supported_surfaces_count = 1
-            });
+            avk::context::init_device({.required_supported_surfaces = m_surface.handler_ptr(), .required_supported_surfaces_count = 1});
 
             m_swapchain.set_swapcain_reset_listener([this](size_t width, size_t height) {
                 static_cast<vk_main_loop_update_listener*>(m_update_listener.get())->on_swapchain_reset(width, height);
@@ -348,7 +338,7 @@ namespace
 
             std::vector<vk::Semaphore> wait_semaphores = update_listener_impl->get_wait_semaphores();
 
-            auto[image_request_wait_semaphore, signal_fence, image_index] = m_swapchain.request_next_image(m_window_handler.get(), m_surface);
+            auto [image_request_wait_semaphore, signal_fence, image_index] = m_swapchain.request_next_image(m_window_handler.get(), m_surface);
 
             wait_semaphores.push_back(image_request_wait_semaphore);
 
@@ -370,148 +360,136 @@ namespace
                 {},
                 {},
                 {},
-                {
-                    vk::ImageMemoryBarrier {
-                        .srcAccessMask = {},
-                        .dstAccessMask = {},
+                {vk::ImageMemoryBarrier{
+                     .srcAccessMask = {},
+                     .dstAccessMask = {},
 
-                        .oldLayout = src_image_layout,
-                        .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+                     .oldLayout = src_image_layout,
+                     .newLayout = vk::ImageLayout::eTransferSrcOptimal,
 
-                        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 
-                        .image = src_image,
+                     .image = src_image,
 
-                        .subresourceRange = {
-                            .aspectMask = vk::ImageAspectFlagBits::eColor,
-                            .baseMipLevel = 0,
-                            .levelCount = 1,
-                            .baseArrayLayer = 0,
-                            .layerCount = 1,
-                        },
-                    },
+                     .subresourceRange = {
+                         .aspectMask = vk::ImageAspectFlagBits::eColor,
+                         .baseMipLevel = 0,
+                         .levelCount = 1,
+                         .baseArrayLayer = 0,
+                         .layerCount = 1,
+                     },
+                 },
 
-                    vk::ImageMemoryBarrier {
-                        .srcAccessMask = {},
-                        .dstAccessMask = {},
+                 vk::ImageMemoryBarrier{
+                     .srcAccessMask = {},
+                     .dstAccessMask = {},
 
-                        .oldLayout = vk::ImageLayout::eUndefined,
-                        .newLayout = vk::ImageLayout::eTransferDstOptimal,
+                     .oldLayout = vk::ImageLayout::eUndefined,
+                     .newLayout = vk::ImageLayout::eTransferDstOptimal,
 
-                        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 
-                        .image = dst_image,
+                     .image = dst_image,
 
-                        .subresourceRange = {
-                            .aspectMask = vk::ImageAspectFlagBits::eColor,
-                            .baseMipLevel = 0,
-                            .levelCount = 1,
-                            .baseArrayLayer = 0,
-                            .layerCount = 1,
-                        },
-                    }
-                });
+                     .subresourceRange = {
+                         .aspectMask = vk::ImageAspectFlagBits::eColor,
+                         .baseMipLevel = 0,
+                         .levelCount = 1,
+                         .baseArrayLayer = 0,
+                         .layerCount = 1,
+                     },
+                 }});
 
             current_command_buffer.blitImage(
-                    src_image,
-                    vk::ImageLayout::eTransferSrcOptimal,
-                    dst_image,
-                    vk::ImageLayout::eTransferDstOptimal,
-                    {
-                            vk::ImageBlit{
-                            .srcSubresource = {
-                                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                                .mipLevel = 0,
-                                .baseArrayLayer = 0,
-                                .layerCount = 1,
-                            },
-                            .srcOffsets = { {
-                                    vk::Offset3D {
+                src_image,
+                vk::ImageLayout::eTransferSrcOptimal,
+                dst_image,
+                vk::ImageLayout::eTransferDstOptimal,
+                {vk::ImageBlit{
+                    .srcSubresource = {
+                        .aspectMask = vk::ImageAspectFlagBits::eColor,
+                        .mipLevel = 0,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1,
+                    },
+                    .srcOffsets = {{vk::Offset3D{
                                         .x = 0,
                                         .y = 0,
                                         .z = 0,
                                     },
-                                    vk::Offset3D {
+                                    vk::Offset3D{
                                         .x = static_cast<int32_t>(src_image_size.width),
                                         .y = static_cast<int32_t>(src_image_size.height),
                                         .z = 1,
-                                    }
-                                }
-                            },
-                            .dstSubresource = {
-                                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                                .mipLevel = 0,
-                                .baseArrayLayer = 0,
-                                .layerCount = 1,
-                            },
-                            .dstOffsets = { {
-                                    vk::Offset3D {
+                                    }}},
+                    .dstSubresource = {
+                        .aspectMask = vk::ImageAspectFlagBits::eColor,
+                        .mipLevel = 0,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1,
+                    },
+                    .dstOffsets = {{vk::Offset3D{
                                         .x = 0,
                                         .y = 0,
                                         .z = 0,
                                     },
-                                    vk::Offset3D {
+                                    vk::Offset3D{
                                         .x = static_cast<int32_t>(dst_image_size.width),
                                         .y = static_cast<int32_t>(dst_image_size.height),
                                         .z = 1,
-                                    }
-                                }
-                            },
-                        }
-                    },
-                    vk::Filter::eLinear);
+                                    }}},
+                }},
+                vk::Filter::eLinear);
 
             current_command_buffer.pipelineBarrier(
-                    vk::PipelineStageFlagBits::eTransfer,
-                    vk::PipelineStageFlagBits::eBottomOfPipe,
-                    {},
-                    {},
-                    {},
-                    {
-                        vk::ImageMemoryBarrier {
-                            .srcAccessMask = {},
-                            .dstAccessMask = {},
+                vk::PipelineStageFlagBits::eTransfer,
+                vk::PipelineStageFlagBits::eBottomOfPipe,
+                {},
+                {},
+                {},
+                {vk::ImageMemoryBarrier{
+                     .srcAccessMask = {},
+                     .dstAccessMask = {},
 
-                            .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
-                            .newLayout = src_image_layout,
+                     .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+                     .newLayout = src_image_layout,
 
-                            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 
-                            .image = src_image,
+                     .image = src_image,
 
-                            .subresourceRange = {
-                                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                                .baseMipLevel = 0,
-                                .levelCount = 1,
-                                .baseArrayLayer = 0,
-                                .layerCount = 1,
-                            },
-                        },
+                     .subresourceRange = {
+                         .aspectMask = vk::ImageAspectFlagBits::eColor,
+                         .baseMipLevel = 0,
+                         .levelCount = 1,
+                         .baseArrayLayer = 0,
+                         .layerCount = 1,
+                     },
+                 },
 
-                        vk::ImageMemoryBarrier {
-                            .srcAccessMask = {},
-                            .dstAccessMask = {},
+                 vk::ImageMemoryBarrier{
+                     .srcAccessMask = {},
+                     .dstAccessMask = {},
 
-                            .oldLayout = vk::ImageLayout::eTransferDstOptimal,
-                            .newLayout = vk::ImageLayout::ePresentSrcKHR,
+                     .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+                     .newLayout = vk::ImageLayout::ePresentSrcKHR,
 
-                            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 
-                            .image = dst_image,
+                     .image = dst_image,
 
-                            .subresourceRange = {
-                                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                                .baseMipLevel = 0,
-                                .levelCount = 1,
-                                .baseArrayLayer = 0,
-                                .layerCount = 1,
-                            },
-                        }
-                });
+                     .subresourceRange = {
+                         .aspectMask = vk::ImageAspectFlagBits::eColor,
+                         .baseMipLevel = 0,
+                         .levelCount = 1,
+                         .baseArrayLayer = 0,
+                         .layerCount = 1,
+                     },
+                 }});
 
             current_command_buffer.end();
 
@@ -521,17 +499,16 @@ namespace
 
             auto curr_semaphore = get_current_semaphore();
 
-            avk::context::queue(vk::QueueFlagBits::eGraphics, 0).submit(
-                vk::SubmitInfo{
-                    .waitSemaphoreCount = wait_semaphores.size(),
-                    .pWaitSemaphores = wait_semaphores.data(),
-                    .pWaitDstStageMask = m_wait_stages.data(),
-                    .commandBufferCount = 1,
-                    .pCommandBuffers = &current_command_buffer,
-                    .signalSemaphoreCount = 1,
-                    .pSignalSemaphores = &curr_semaphore,
-                },
-                signal_fence);
+            avk::context::queue(vk::QueueFlagBits::eGraphics, 0).submit(vk::SubmitInfo{
+                                                                            .waitSemaphoreCount = wait_semaphores.size(),
+                                                                            .pWaitSemaphores = wait_semaphores.data(),
+                                                                            .pWaitDstStageMask = m_wait_stages.data(),
+                                                                            .commandBufferCount = 1,
+                                                                            .pCommandBuffers = &current_command_buffer,
+                                                                            .signalSemaphoreCount = 1,
+                                                                            .pSignalSemaphores = &curr_semaphore,
+                                                                        },
+                                                                        signal_fence);
 
             m_swapchain.present(m_window_handler.get(), m_surface, &curr_semaphore, 1, 0);
         }
@@ -564,7 +541,7 @@ namespace
             return m_submit_semaphores[m_swapchain.current_image()];
         }
 
-        std::unique_ptr<GLFWwindow, void(*)(GLFWwindow* window)> m_window_handler{nullptr, glfwDestroyWindow};
+        std::unique_ptr<GLFWwindow, void (*)(GLFWwindow* window)> m_window_handler{nullptr, glfwDestroyWindow};
         std::shared_ptr<window_context_init_raii> m_window_ctx{};
         std::unique_ptr<window::main_loop_update_listener> m_update_listener{};
         avk::surface m_surface{};
@@ -575,7 +552,7 @@ namespace
         std::vector<vk::PipelineStageFlags> m_wait_stages{};
         std::vector<avk::semaphore> m_submit_semaphores{};
     };
-}
+} // namespace
 
 
 std::unique_ptr<window::impl> sandbox::hal::window::impl::create(

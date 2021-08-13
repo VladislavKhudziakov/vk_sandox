@@ -13,7 +13,7 @@ namespace sandbox::hal::render::avk
         explicit vulkan_result_error(vk::Result result);
         ~vulkan_result_error() noexcept override;
 
-        const char *what() const override;
+        const char* what() const override;
 
         vk::Result result() const;
 
@@ -21,17 +21,17 @@ namespace sandbox::hal::render::avk
         vk::Result m_result;
         std::string m_error_message;
     };
-}
+} // namespace sandbox::hal::render::avk
 
 #ifndef NDEBUG
 
-#define VK_CALL(expr)                                               \
-{                                                                   \
-    vk::Result res = static_cast<vk::Result>(expr);                 \
-    if (res != vk::Result::eSuccess)  {                             \
-         throw sandbox::hal::render::avk::vulkan_result_error(res); \
-    }                                                               \
-}
+    #define VK_CALL(expr)                                                  \
+        {                                                                  \
+            vk::Result res = static_cast<vk::Result>(expr);                \
+            if (res != vk::Result::eSuccess) {                             \
+                throw sandbox::hal::render::avk::vulkan_result_error(res); \
+            }                                                              \
+        }
 
 #else
     #define VK_CALL(expr) (expr);
