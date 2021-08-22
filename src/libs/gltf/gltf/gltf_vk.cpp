@@ -51,177 +51,174 @@ namespace
 
     class vk_assets_factory : public gltf::assets_factory
     {
-        public:
-            ~vk_assets_factory() override = default;
+    public:
+        ~vk_assets_factory() override = default;
 
-            sandbox::hal::render::avk::vma_buffer create_vertex_buffer(vk::CommandBuffer& command_buffer, uint32_t queue_family)
-            {
-                return create_buffer(
-                    command_buffer,
-                    queue_family,
-                    m_vertex_buffer_size,
-                    vk::BufferUsageFlagBits::eVertexBuffer,
-                    vk::AccessFlagBits::eVertexAttributeRead,
-                    m_copy_vertices_data_callbacks);
+        sandbox::hal::render::avk::vma_buffer create_vertex_buffer(vk::CommandBuffer& command_buffer, uint32_t queue_family)
+        {
+            return create_buffer(
+                command_buffer,
+                queue_family,
+                m_vertex_buffer_size,
+                vk::BufferUsageFlagBits::eVertexBuffer,
+                vk::AccessFlagBits::eVertexAttributeRead,
+                m_copy_vertices_data_callbacks);
+        }
+
+
+        sandbox::hal::render::avk::vma_buffer create_index_buffer(vk::CommandBuffer& command_buffer, uint32_t queue_family)
+        {
+            if (m_index_buffer_size == 0) {
+                return {};
             }
 
+            return create_buffer(
+                command_buffer,
+                queue_family,
+                m_index_buffer_size,
+                vk::BufferUsageFlagBits::eIndexBuffer,
+                vk::AccessFlagBits::eIndexRead,
+                m_copy_indices_data_callbacks);
+        }
 
-            sandbox::hal::render::avk::vma_buffer create_index_buffer(vk::CommandBuffer& command_buffer, uint32_t queue_family)
-            {
-                if (m_index_buffer_size == 0) {
-                    return {};
-                }
-
-                return create_buffer(
-                    command_buffer,
-                    queue_family,
-                    m_index_buffer_size,
-                    vk::BufferUsageFlagBits::eIndexBuffer,
-                    vk::AccessFlagBits::eIndexRead,
-                    m_copy_indices_data_callbacks);
-            }
-
-            size_t get_vertex_buffer_size() const
-            {
-                return m_vertex_buffer_size;
-            }
+        size_t get_vertex_buffer_size() const
+        {
+            return m_vertex_buffer_size;
+        }
 
 
-            size_t get_index_buffer_size() const
-            {
-                return m_index_buffer_size;
-            }
+        size_t get_index_buffer_size() const
+        {
+            return m_index_buffer_size;
+        }
 
 
-            void clear_staging_resources()
-            {
-                m_staging_buffers.clear();
-            }
+        void clear_staging_resources()
+        {
+            m_staging_buffers.clear();
+        }
 
 
-            std::unique_ptr<gltf::primitive> create_primitive(
-                const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
-                const nlohmann::json& gltf_json,
-                const nlohmann::json& primitive_json) override
-            {
-                auto get_buffer_data = [&buffers](const auto& meta_src) {
-                    const auto& buffer = buffers[meta_src.buffer];
-                    const auto* src = buffer->get_data().get_data();
-                    const auto src_offset = meta_src.buffer_offset;
-                    const auto src_size = meta_src.buffer_length;
+        std::unique_ptr<gltf::primitive> create_primitive(
+            const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
+            const nlohmann::json& gltf_json,
+            const nlohmann::json& primitive_json) override
+        {
+            auto get_buffer_data = [&buffers](const auto& meta_src) {
+                const auto& buffer = buffers[meta_src.buffer];
+                const auto* src = buffer->get_data().get_data();
+                const auto src_offset = meta_src.buffer_offset;
+                const auto src_size = meta_src.buffer_length;
 
-                    return std::make_tuple(src, src_offset, src_size);
+                return std::make_tuple(src, src_offset, src_size);
+            };
+
+            auto get_copy_data_callback = [&get_buffer_data](const auto& meta_src, uint64_t dst_offset) {
+                return [&meta_src, &get_buffer_data, dst_offset](uint8_t* dst) {
+                    auto [src, src_offset, src_size] = get_buffer_data(meta_src);
+                    std::memcpy(dst + dst_offset, src + src_offset, src_size);
+                };
+            };
+
+            uint32_t vertex_attr_offset{0};
+            uint32_t attr_location{0};
+
+            auto vk_primitive = std::make_unique<gltf::gltf_vk::primitive>(gltf_json, primitive_json);
+
+            std::vector<vk::VertexInputAttributeDescription> vertex_attributes{};
+
+            vertex_attributes.reserve(vk_primitive->get_attributes_data().size());
+
+            for (const auto& attribute : vk_primitive->get_attributes_data()) {
+                m_copy_vertices_data_callbacks.emplace_back(get_copy_data_callback(attribute, m_vertex_buffer_size));
+                m_vertex_buffer_size += attribute.buffer_length;
+
+                vertex_attributes.emplace_back() = {
+                    .location = attr_location++,
+                    .binding = 0,
+                    .format = to_vk_format(attribute.accessor_type, attribute.component_type),
+                    .offset = vertex_attr_offset,
                 };
 
-                auto get_copy_data_callback = [&get_buffer_data](const auto& meta_src, uint64_t dst_offset) {
-                    return [&meta_src, &get_buffer_data, dst_offset](uint8_t* dst) {
-                        auto [src, src_offset, src_size] = get_buffer_data(meta_src);
-                        std::memcpy(dst + dst_offset, src + src_offset, src_size);
-                    };
-                };
-
-                uint32_t vertex_attr_offset{0};
-                uint32_t attr_location{0};
-
-                auto vk_primitive = std::make_unique<gltf::gltf_vk::primitive>(gltf_json, primitive_json);
-
-                std::vector<vk::VertexInputAttributeDescription> vertex_attributes{};
-
-                vertex_attributes.reserve(vk_primitive->get_attributes_data().size());
-
-                for (const auto& attribute : vk_primitive->get_attributes_data()) {
-                        m_copy_vertices_data_callbacks.emplace_back(get_copy_data_callback(attribute, m_vertex_buffer_size));
-                        m_vertex_buffer_size += attribute.buffer_length;
-
-                    vertex_attributes.emplace_back() = {
-                        .location = attr_location++,
-                        .binding = 0,
-                        .format = to_vk_format(attribute.accessor_type, attribute.component_type),
-                        .offset = vertex_attr_offset,
-                    };
-
-                    vertex_attr_offset += attribute.buffer_length;
-                }
-
-                vk_primitive->set_vertices_format(vertex_attributes);
-
-                const auto& indices = vk_primitive->get_indices_data();
-
-                if (indices.buffer >= 0) {
-                    vk_primitive->set_vertex_buffer_offset(m_index_buffer_size);
-                    vk_primitive->set_index_type(to_vk_index_type(indices.accessor_type, indices.component_type));
-
-                    m_copy_indices_data_callbacks.emplace_back(get_copy_data_callback(indices, m_index_buffer_size));
-                    m_index_buffer_size += indices.buffer_length;
-                }
-
-                return vk_primitive;
+                vertex_attr_offset += attribute.buffer_length;
             }
 
-        private:
-            avk::vma_buffer create_buffer(
-                vk::CommandBuffer& command_buffer,
-                uint32_t queue_family,
-                uint32_t buffer_size,
-                vk::BufferUsageFlagBits buffer_usage,
-                vk::AccessFlagBits access_flags,
-                const std::vector<std::function<void(uint8_t*)>>& copy_callbacks)
-            {
-                m_staging_buffers.emplace_back() = create_staging_buffer(
-                    queue_family,
-                    buffer_size,
-                    [&copy_callbacks](uint8_t* dst) {
-                        for (auto& callback : copy_callbacks) {
-                            callback(dst);
-                        }
-                    });
+            vk_primitive->set_vertices_format(vertex_attributes);
 
-                auto buffer = avk::create_vma_buffer(
-                    vk::BufferCreateInfo{
-                        .flags = {},
-                        .size = buffer_size,
-                        .usage = vk::BufferUsageFlagBits::eTransferDst | buffer_usage,
-                        .sharingMode = vk::SharingMode::eExclusive,
-                        .queueFamilyIndexCount = 1,
-                        .pQueueFamilyIndices = &queue_family
-                            },
-                            VmaAllocationCreateInfo{
-                        .usage = VMA_MEMORY_USAGE_GPU_ONLY
-                    });
+            const auto& indices = vk_primitive->get_indices_data();
 
-                command_buffer.copyBuffer(
-                    m_staging_buffers.back().as<vk::Buffer>(),
-                    buffer.as<vk::Buffer>(),
-                    {vk::BufferCopy{
-                        .srcOffset = 0,
-                        .dstOffset = 0,
-                        .size = buffer_size,
-                        }});
+            if (indices.buffer >= 0) {
+                vk_primitive->set_vertex_buffer_offset(m_index_buffer_size);
+                vk_primitive->set_index_type(to_vk_index_type(indices.accessor_type, indices.component_type));
 
-                command_buffer.pipelineBarrier(
-                    vk::PipelineStageFlagBits::eTransfer,
-                    vk::PipelineStageFlagBits::eVertexInput,
-                    {},
-                    {vk::MemoryBarrier{
-                        .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-                        .dstAccessMask = access_flags,
-                        }},
-                        {},
-                        {});
-
-                return buffer;
+                m_copy_indices_data_callbacks.emplace_back(get_copy_data_callback(indices, m_index_buffer_size));
+                m_index_buffer_size += indices.buffer_length;
             }
 
-            uint64_t m_vertex_buffer_size{0};
-            uint64_t m_index_buffer_size{0};
+            return vk_primitive;
+        }
 
-            std::vector<std::function<void(uint8_t*)>> m_copy_vertices_data_callbacks{};
-            std::vector<std::function<void(uint8_t*)>> m_copy_indices_data_callbacks{};
+    private:
+        avk::vma_buffer create_buffer(
+            vk::CommandBuffer& command_buffer,
+            uint32_t queue_family,
+            uint32_t buffer_size,
+            vk::BufferUsageFlagBits buffer_usage,
+            vk::AccessFlagBits access_flags,
+            const std::vector<std::function<void(uint8_t*)>>& copy_callbacks)
+        {
+            m_staging_buffers.emplace_back() = create_staging_buffer(
+                queue_family,
+                buffer_size,
+                [&copy_callbacks](uint8_t* dst) {
+                    for (auto& callback : copy_callbacks) {
+                        callback(dst);
+                    }
+                });
 
-            std::vector<avk::vma_buffer> m_staging_buffers{};
+            auto buffer = avk::create_vma_buffer(
+                vk::BufferCreateInfo{
+                    .flags = {},
+                    .size = buffer_size,
+                    .usage = vk::BufferUsageFlagBits::eTransferDst | buffer_usage,
+                    .sharingMode = vk::SharingMode::eExclusive,
+                    .queueFamilyIndexCount = 1,
+                    .pQueueFamilyIndices = &queue_family},
+                VmaAllocationCreateInfo{
+                    .usage = VMA_MEMORY_USAGE_GPU_ONLY});
+
+            command_buffer.copyBuffer(
+                m_staging_buffers.back().as<vk::Buffer>(),
+                buffer.as<vk::Buffer>(),
+                {vk::BufferCopy{
+                    .srcOffset = 0,
+                    .dstOffset = 0,
+                    .size = buffer_size,
+                }});
+
+            command_buffer.pipelineBarrier(
+                vk::PipelineStageFlagBits::eTransfer,
+                vk::PipelineStageFlagBits::eVertexInput,
+                {},
+                {vk::MemoryBarrier{
+                    .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+                    .dstAccessMask = access_flags,
+                }},
+                {},
+                {});
+
+            return buffer;
+        }
+
+        uint64_t m_vertex_buffer_size{0};
+        uint64_t m_index_buffer_size{0};
+
+        std::vector<std::function<void(uint8_t*)>> m_copy_vertices_data_callbacks{};
+        std::vector<std::function<void(uint8_t*)>> m_copy_indices_data_callbacks{};
+
+        std::vector<avk::vma_buffer> m_staging_buffers{};
     };
 } // namespace
-
 
 
 gltf::gltf_vk::primitive::primitive(const nlohmann::json& gltf_json, const nlohmann::json& primitive_json)
@@ -355,7 +352,7 @@ vk::IndexType gltf::gltf_vk::primitive::get_index_type() const
 
 void gltf::gltf_vk::primitive::set_index_buffer_offset(uint64_t offset)
 {
-     m_index_buffer_offset = offset;
+    m_index_buffer_offset = offset;
 }
 
 

@@ -38,15 +38,15 @@ namespace sandbox::hal::render::avk
             if (res != vk::Result::eSuccess) {                             \
                 throw sandbox::hal::render::avk::vulkan_result_error(res); \
             }                                                              \
-        } while(false)
+        } while (false)
 
-    #define VK_C_CALL(expr)                                                             \
-        do {                                                                            \
-            VkResult res = (expr);                                                      \
-            if (res != VK_SUCCESS) {                                                    \
-                throw sandbox::hal::render::avk::vulkan_result_error(vk::Result(res));  \
-            }                                                                           \
-        } while(false)
+    #define VK_C_CALL(expr)                                                            \
+        do {                                                                           \
+            VkResult res = (expr);                                                     \
+            if (res != VK_SUCCESS) {                                                   \
+                throw sandbox::hal::render::avk::vulkan_result_error(vk::Result(res)); \
+            }                                                                          \
+        } while (false)
 
 #else
     #define VK_CALL(expr) (expr)

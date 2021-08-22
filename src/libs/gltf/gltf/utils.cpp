@@ -65,9 +65,9 @@ sandbox::gltf::alpha_mode_value::alpha_mode_value(const std::string& value)
 {
     if (value == ALPHA_MODE_OPAQUE) {
         mode = alpha_mode::opaque;
-    } if (value == ALPHA_MODE_MASK) {
+    } else if (value == ALPHA_MODE_MASK) {
         mode = alpha_mode::mask;
-    } if (value == ALPHA_MODE_BLEND) {
+    } else if (value == ALPHA_MODE_BLEND) {
         mode = alpha_mode::blend;
     } else {
         throw std::runtime_error("Bad alpha mode " + value);

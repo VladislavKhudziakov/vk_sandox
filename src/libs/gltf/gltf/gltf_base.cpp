@@ -109,8 +109,7 @@ gltf::mesh::mesh(
         m_primitives.emplace_back(assets_factory.create_primitive(
             buffers,
             gltf_json,
-            primitive_json
-        ));
+            primitive_json));
     }
 }
 
@@ -222,7 +221,6 @@ gltf::model::model(const nlohmann::json& gltf_json, std::unique_ptr<assets_facto
 {
     init_resources(gltf_json);
     m_current_scene = gltf_json["scene"].get<uint32_t>();
-
 }
 
 
@@ -373,7 +371,7 @@ std::unique_ptr<gltf::mesh> gltf::assets_factory::create_mesh(
     const nlohmann::json& gltf_json,
     const nlohmann::json& mesh_json)
 {
-   return std::make_unique<gltf::mesh>(*this, buffers, gltf_json, mesh_json);
+    return std::make_unique<gltf::mesh>(*this, buffers, gltf_json, mesh_json);
 }
 
 
@@ -402,23 +400,20 @@ gltf::material::material(const nlohmann::json& gltf_json, const nlohmann::json& 
 {
     using json = nlohmann::json;
 
-    auto do_if_found = [](const nlohmann::json& where, const std::string& what, const std::function<void(const nlohmann::json&)>& callback)
-    {
+    auto do_if_found = [](const nlohmann::json& where, const std::string& what, const std::function<void(const nlohmann::json&)>& callback) {
         if (where.find(what) != where.end()) {
             callback(where[what]);
         }
     };
 
 
-    auto set_texture_data = [](texture_data& data, const json& json_texture)
-    {
+    auto set_texture_data = [](texture_data& data, const json& json_texture) {
         data.index = json_texture["index"].get<int32_t>();
         data.coord_set = static_cast<texture_data::coords_set>(json_texture["texCoord"].get<int32_t>());
     };
 
 
-    auto set_vector_data = [&material_json](const json& json_data, auto& dst)
-    {
+    auto set_vector_data = [&material_json](const json& json_data, auto& dst) {
         using dst_value_type = typename std::remove_reference_t<decltype(dst)>::value_type;
         constexpr auto el_count = sizeof(dst) / sizeof(dst_value_type);
         const auto src = json_data.get<std::vector<dst_value_type>>();
