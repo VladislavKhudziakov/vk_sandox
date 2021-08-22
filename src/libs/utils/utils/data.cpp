@@ -2,6 +2,10 @@
 #include "data.hpp"
 
 
+sandbox::utils::data::data(sandbox::utils::data&&) noexcept = default;
+sandbox::utils::data& sandbox::utils::data::operator=(sandbox::utils::data&&) noexcept = default;
+
+
 sandbox::utils::data sandbox::utils::data::create_non_owning(uint8_t* ptr, size_t size)
 {
     return {{ptr, [](uint8_t*) {}}, size};

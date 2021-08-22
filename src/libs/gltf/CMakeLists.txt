@@ -6,4 +6,9 @@ make_bin(
     STATIC
     DEPENDS
         hal_render
+        hal_filesystem
+        sandbox_utils
+        glm
+        nlohmann_json
+        spdlog
 )

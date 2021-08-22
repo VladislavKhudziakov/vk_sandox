@@ -14,6 +14,9 @@ namespace sandbox::utils
         data() = default;
         ~data() = default;
 
+        data(data&&) noexcept;
+        data& operator=(data&&) noexcept;
+
         const uint8_t* get_data() const;
         uint8_t* get_data();
 

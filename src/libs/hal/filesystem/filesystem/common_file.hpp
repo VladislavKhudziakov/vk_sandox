@@ -17,6 +17,7 @@ namespace sandbox::hal::filesystem
         void close() override;
 
         utils::data read_all() override;
+        utils::data read_all_and_move() override;
         size_t get_size() override;
 
     private:

@@ -14,6 +14,8 @@ namespace sandbox::hal::filesystem
         virtual void open(const std::string& url) = 0;
         virtual void close() = 0;
         virtual sandbox::utils::data read_all() = 0;
+        virtual sandbox::utils::data read_all_and_move() = 0;
+
         virtual size_t get_size() = 0;
     };
 } // namespace sandbox::hal::filesystem

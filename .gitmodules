@@ -19,3 +19,6 @@
 [submodule "src/third/stb/stb"]
 	path = src/third/stb/stb
 	url = https://github.com/nothings/stb
+[submodule "src/third/json"]
+	path = src/third/json
+	url = https://github.com/nlohmann/json

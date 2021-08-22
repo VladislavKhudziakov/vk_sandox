@@ -1,0 +1,10 @@
+make_bin(
+    NAME
+        test_gltf
+    DEPENDS
+        hal_window
+        hal_filesystem
+        gltf
+    RESOURCES_EXTENSIONS
+        .glb
+)

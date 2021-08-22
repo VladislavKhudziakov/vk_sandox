@@ -49,3 +49,25 @@ size_t sandbox::hal::filesystem::common_file::get_size()
 
     return m_size;
 }
+
+
+sandbox::utils::data sandbox::hal::filesystem::common_file::read_all_and_move()
+{
+    auto move_data = [this]() {
+        const auto sz = m_data_buffer.size();
+        return sandbox::utils::data::create_owning(
+            m_data_buffer.data(), [data = std::move(m_data_buffer)](uint8_t*) {}, sz);
+    };
+
+    if (!m_data_buffer.empty()) {
+        return move_data();
+    }
+
+    if (const auto sz = get_size(); sz > 0) {
+        m_data_buffer.resize(sz);
+        std::fread(m_data_buffer.data(), 1, sz, m_file_handler.get());
+        return move_data();
+    }
+
+    return {};
+}
