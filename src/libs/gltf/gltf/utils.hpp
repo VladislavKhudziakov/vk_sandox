@@ -17,6 +17,14 @@ namespace sandbox::gltf
     };
 
 
+    enum class alpha_mode
+    {
+        opaque,
+        mask,
+        blend
+    };
+
+
     enum class accessor_type
     {
         scalar,
@@ -46,6 +54,22 @@ namespace sandbox::gltf
         accessor_type type{};
     };
 
+
+    struct alpha_mode_value
+    {
+        constexpr static auto ALPHA_MODE_OPAQUE = "OPAQUE";
+        constexpr static auto ALPHA_MODE_MASK = "MASK";
+        constexpr static auto ALPHA_MODE_BLEND = "BLEND";
+
+        alpha_mode_value() = default;
+        alpha_mode_value(const char* value);
+        alpha_mode_value(const std::string& value);
+
+        operator sandbox::gltf::alpha_mode() const;
+
+        alpha_mode mode{alpha_mode::opaque};
+    };
+
     vk::Format to_vk_format(accessor_type_value accessor_type, component_type component_type);
     vk::IndexType to_vk_index_type(accessor_type_value accessor_type, component_type component_type);
 
@@ -54,4 +78,5 @@ namespace sandbox::gltf
 
     std::string to_string(accessor_type);
     std::string to_string(component_type);
+    std::string to_string(alpha_mode);
 } // namespace sandbox::gltf

@@ -47,6 +47,40 @@ sandbox::gltf::accessor_type_value::operator sandbox::gltf::accessor_type() cons
 }
 
 
+sandbox::gltf::alpha_mode_value::alpha_mode_value(const char* value)
+{
+    if (strcmp(ALPHA_MODE_OPAQUE, value) == 0) {
+        mode = alpha_mode::opaque;
+    } else if (strcmp(ALPHA_MODE_MASK, value) == 0) {
+        mode = alpha_mode::mask;
+    } else if (strcmp(ALPHA_MODE_BLEND, value) == 0) {
+        mode = alpha_mode::blend;
+    } else {
+        throw std::runtime_error("Bad alpha mode " + std::string(value));
+    }
+}
+
+
+sandbox::gltf::alpha_mode_value::alpha_mode_value(const std::string& value)
+{
+    if (value == ALPHA_MODE_OPAQUE) {
+        mode = alpha_mode::opaque;
+    } if (value == ALPHA_MODE_MASK) {
+        mode = alpha_mode::mask;
+    } if (value == ALPHA_MODE_BLEND) {
+        mode = alpha_mode::blend;
+    } else {
+        throw std::runtime_error("Bad alpha mode " + value);
+    }
+}
+
+
+sandbox::gltf::alpha_mode_value::operator sandbox::gltf::alpha_mode() const
+{
+    return mode;
+}
+
+
 vk::Format sandbox::gltf::to_vk_format(sandbox::gltf::accessor_type_value accessor_type, sandbox::gltf::component_type component_type)
 {
     switch (accessor_type) {
@@ -181,6 +215,21 @@ std::string sandbox::gltf::to_string(sandbox::gltf::component_type component_typ
     }
 
     return std::to_string(static_cast<int>(component_type));
+}
+
+
+std::string sandbox::gltf::to_string(sandbox::gltf::alpha_mode alpha_mode)
+{
+    switch (alpha_mode) {
+        case alpha_mode::opaque:
+            return "OPAQUE";
+        case alpha_mode::mask:
+            return "MASK";
+        case alpha_mode::blend:
+            return "BLEND";
+    }
+
+    return std::to_string(static_cast<int>(alpha_mode));
 }
 
 

@@ -3,9 +3,9 @@
 #include <stdexcept>
 
 #ifndef NDEBUG
-    #define CHECK(expr)                                                                                                         \
-        if (!expr) {                                                                                                            \
-            throw std::runtime_error(#expr " failed in " + std::string(__FILE__) " at " + std::to_string(__LINE__) + " line."); \
+    #define CHECK(expr)                                                                                                           \
+        if (!(expr)) {                                                                                                            \
+            throw std::runtime_error(#expr " failed in " + std::string(__FILE__) + " at " + std::to_string(__LINE__) + " line."); \
         }
 #else
     #define CHECK(expr)                                 \

@@ -13,17 +13,22 @@
 
 namespace sandbox::gltf
 {
+    class assets_factory;
+
+
     class buffer
     {
     public:
         explicit buffer(utils::data);
         explicit buffer(const std::string&);
+        virtual ~buffer() = default;
 
         const utils::data& get_data() const;
 
     private:
         utils::data m_data;
     };
+
 
     class primitive
     {
@@ -48,7 +53,7 @@ namespace sandbox::gltf
         };
 
         primitive(const nlohmann::json& gltf_json, const nlohmann::json& primitive_json);
-        ~primitive() = default;
+        virtual ~primitive() = default;
 
         const std::vector<attribute_data>& get_attributes_data() const;
         const indices_data& get_indices_data() const;
@@ -66,18 +71,25 @@ namespace sandbox::gltf
     class mesh
     {
     public:
-        mesh(const nlohmann::json& gltf_json, const nlohmann::json& mesh_json);
-        const std::vector<primitive>& get_primitives() const;
+        mesh(
+            assets_factory& assets_factory,
+            const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
+            const nlohmann::json& gltf_json,
+            const nlohmann::json& mesh_json);
+        virtual ~mesh() = default;
+
+        const std::vector<std::unique_ptr<primitive>>& get_primitives() const;
 
     private:
-        std::vector<primitive> m_primitives{};
+        std::vector<std::unique_ptr<primitive>> m_primitives{};
     };
 
 
     class skin
     {
     public:
-        skin(const std::vector<buffer>& buffers, const nlohmann::json& gltf_json, const nlohmann::json& skin_json);
+        skin(const std::vector<std::unique_ptr<buffer>>& buffers, const nlohmann::json& gltf_json, const nlohmann::json& skin_json);
+        virtual ~skin() = default;
 
         glm::mat4 inverse_bind_matrix{};
         std::vector<int32_t> joints{};
@@ -95,6 +107,7 @@ namespace sandbox::gltf
         };
 
         node(const nlohmann::json& gltf_json, const nlohmann::json& node_json);
+        virtual ~node() = default;
 
         int32_t mesh = -1;
         int32_t skin = -1;
@@ -107,17 +120,115 @@ namespace sandbox::gltf
         trs_transform& get_transform();
     };
 
+
     class material
     {
+    public:
+        struct texture_data
+        {
+            enum class coords_set : uint32_t
+            {
+                texcoord_0 = 0,
+                texcoord_1 = 1
+            };
+
+            int32_t index = -1;
+            coords_set coord_set = coords_set::texcoord_0;
+        };
+
+        struct pbr_metallic_roughness
+        {
+            glm::vec4 base_color{1, 1, 1, 1};
+            texture_data base_color_texture{};
+
+            float metallic_factor{1};
+            float roughness_factor{1};
+            texture_data metallic_roughness_texture{};
+        };
+
+        material() = default;
+        material(const nlohmann::json& gltf_json, const nlohmann::json& material_json);
+
+        virtual ~material() = default;
+
+        const pbr_metallic_roughness& get_pbr_metallic_roughness() const;
+
+        const texture_data& get_normal_texture() const;
+        const texture_data& get_occlusion_texture() const;
+        const texture_data& get_emissive_texture() const;
+
+        glm::vec3 get_emissive_factor() const;
+
+        alpha_mode get_alpha_mode() const;
+
+        float get_alpha_cutoff() const;
+
+        bool is_double_sided() const;
+
+    private:
+        pbr_metallic_roughness m_pbr_metallic_roughness_data{};
+        texture_data m_normal_texture{};
+        texture_data m_occlusion_texture{};
+        texture_data m_emissive_texture{};
+
+        glm::vec3 m_emissive_factor{0, 0, 0};
+
+        alpha_mode_value m_alpha_mode{};
+
+        float m_alpha_cutoff{0.5};
+
+        bool m_double_sided{false};
     };
+
 
     class scene
     {
     public:
         scene(const nlohmann::json& gltf_json, const nlohmann::json& scene_json);
+        virtual ~scene() = default;
+
+        const std::vector<int32_t>& get_nodes() const;
 
     private:
         std::vector<int32_t> m_nodes{};
+    };
+
+
+    class assets_factory
+    {
+    public:
+        virtual ~assets_factory() = default;
+
+        virtual std::unique_ptr<scene> create_scene(
+            const nlohmann::json& gltf_json,
+            const nlohmann::json& scene_json);
+
+        virtual std::unique_ptr<material> create_material(
+            const nlohmann::json& gltf_json,
+            const nlohmann::json& material_json);
+
+        virtual std::unique_ptr<node> create_node(
+            const nlohmann::json& gltf_json,
+            const nlohmann::json& node_json);
+
+        virtual std::unique_ptr<skin> create_skin(
+            const std::vector<std::unique_ptr<buffer>>& buffers,
+            const nlohmann::json& gltf_json,
+            const nlohmann::json& skin_json);
+
+        virtual std::unique_ptr<mesh> create_mesh(
+            const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
+            const nlohmann::json& gltf_json,
+            const nlohmann::json& mesh_json);
+
+        virtual std::unique_ptr<buffer> create_buffer(utils::data);
+
+        virtual std::unique_ptr<buffer> create_buffer(const std::string&);
+
+        virtual std::unique_ptr<primitive> create_primitive(
+            const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
+            const nlohmann::json& gltf_json,
+            const nlohmann::json& primitive_json);
     };
 
 
@@ -126,24 +237,32 @@ namespace sandbox::gltf
     public:
         model() = default;
 
-        explicit model(const nlohmann::json& gltf_json);
-        model(const nlohmann::json& gltf_json, utils::data glb_data);
+        explicit model(const nlohmann::json& gltf_json, std::unique_ptr<assets_factory> assets_factory);
+        model(const nlohmann::json& gltf_json, utils::data glb_data, std::unique_ptr<assets_factory> assets_factory);
 
-        const std::vector<scene>& get_scenes() const;
-        const std::vector<material>& get_materials() const;
-        const std::vector<node>& get_nodes() const;
-        const std::vector<skin>& get_skins() const;
-        const std::vector<mesh>& get_meshes() const;
-        const std::vector<buffer>& get_buffers() const;
+        const std::vector<std::unique_ptr<scene>>& get_scenes() const;
+        const std::vector<std::unique_ptr<material>>& get_materials() const;
+        const std::vector<std::unique_ptr<node>>& get_nodes() const;
+        const std::vector<std::unique_ptr<skin>>& get_skins() const;
+        const std::vector<std::unique_ptr<mesh>>& get_meshes() const;
+        const std::vector<std::unique_ptr<buffer>>& get_buffers() const;
+
+        uint32_t get_current_scene() const;
+
+        assets_factory& get_assets_factory();
 
     private:
         void init_resources(const nlohmann::json& gltf_json);
 
-        std::vector<scene> m_scenes{};
-        std::vector<material> m_materials{};
-        std::vector<node> m_nodes{};
-        std::vector<skin> m_skins{};
-        std::vector<mesh> m_meshes{};
-        std::vector<buffer> m_buffers{};
+        uint32_t m_current_scene{0};
+
+        std::vector<std::unique_ptr<scene>> m_scenes{};
+        std::vector<std::unique_ptr<material>> m_materials{};
+        std::vector<std::unique_ptr<node>> m_nodes{};
+        std::vector<std::unique_ptr<skin>> m_skins{};
+        std::vector<std::unique_ptr<mesh>> m_meshes{};
+        std::vector<std::unique_ptr<buffer>> m_buffers{};
+
+        std::unique_ptr<assets_factory> m_assets_factory{};
     };
 } // namespace sandbox::gltf

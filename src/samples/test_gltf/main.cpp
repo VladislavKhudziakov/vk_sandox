@@ -1,7 +1,6 @@
 
 
 #include <filesystem/common_file.hpp>
-#include <cassert>
 
 #include <gltf/gltf_vk.hpp>
 
