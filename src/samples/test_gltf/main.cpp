@@ -11,7 +11,7 @@
 
 #include "../utils/gltf_vk_primitive_renderer.hpp"
 
-#include <gltf/gltf_vk.hpp>
+#include <gltf/vk_utils.hpp>
 
 #include <glm/gtc/type_ptr.hpp>
 
@@ -28,32 +28,14 @@ public:
 
     void create_framebuffer(uint32_t width, uint32_t height)
     {
-        assert(m_pass);
-
         uint32_t queue_family = avk::context::queue_family(vk::QueueFlagBits::eGraphics);
 
-        m_attachments.clear();
-        m_attachments.resize(2);
+        auto [framebuffer, attachments, attachments_views] = avk::create_framebuffer_from_pass(
+            width, height, queue_family, m_pass.get_info(), m_pass.get_native_pass(), {}, {vk::ImageUsageFlagBits::eTransferSrc});
 
-        m_attachments_views.clear();
-        m_attachments_views.resize(2);
-
-        auto [color_attachment, color_attachment_view] = avk::create_attachment(
-            width, height, vk::Format::eR8G8B8A8Srgb, queue_family, vk::ImageUsageFlagBits::eTransferSrc);
-        auto [depth_attachment, depth_attachment_view] = avk::create_attachment(
-            width, height, vk::Format::eD24UnormS8Uint, queue_family);
-
-        m_attachments[0] = std::move(color_attachment);
-        m_attachments[1] = std::move(depth_attachment);
-
-        m_attachments_views[0] = std::move(color_attachment_view);
-        m_attachments_views[1] = std::move(depth_attachment_view);
-
-        std::vector<vk::ImageView> attachment_views{};
-        std::copy(m_attachments_views.begin(), m_attachments_views.end(), std::back_inserter(attachment_views));
-
-        m_framebuffer = avk::create_framebuffer_from_attachments(
-            width, height, m_pass, attachment_views.data(), attachment_views.size());
+        m_framebuffer = std::move(framebuffer);
+        m_attachments = std::move(attachments);
+        m_attachments_views = std::move(attachments_views);
 
         m_framebuffer_width = width;
         m_framebuffer_height = height;
@@ -63,63 +45,61 @@ public:
 
     void create_pass()
     {
-        vk::AttachmentReference subpass_refs[]{
-            {
-                .attachment = 0,
-                .layout = vk::ImageLayout::eColorAttachmentOptimal,
+        // clang-format off
+        avk::pass_create_info info{
+            .attachments = {
+                {
+                    .flags = {},
+                    .format = vk::Format::eR8G8B8A8Srgb,
+                    .samples = vk::SampleCountFlagBits::e1,
+                    .loadOp = vk::AttachmentLoadOp::eClear,
+                    .storeOp = vk::AttachmentStoreOp::eStore,
+                    .initialLayout = vk::ImageLayout::eUndefined,
+                    .finalLayout = vk::ImageLayout::eTransferSrcOptimal,
+                },
+                {
+                    .flags = {},
+                    .format = vk::Format::eD24UnormS8Uint,
+                    .samples = vk::SampleCountFlagBits::e1,
+                    .loadOp = vk::AttachmentLoadOp::eClear,
+                    .storeOp = vk::AttachmentStoreOp::eDontCare,
+                    .initialLayout = vk::ImageLayout::eUndefined,
+                    .finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+                }
             },
-            {
-                .attachment = 1,
-                .layout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-            }};
-
-        vk::SubpassDescription subpass{
-            .flags = {},
-            .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
-            .colorAttachmentCount = 1,
-            .pColorAttachments = subpass_refs,
-            .pDepthStencilAttachment = subpass_refs + 1};
-
-        vk::AttachmentDescription pass_attachments[]{
-            {
-                .flags = {},
-                .format = vk::Format::eR8G8B8A8Srgb,
-                .samples = vk::SampleCountFlagBits::e1,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eStore,
-                .initialLayout = vk::ImageLayout::eUndefined,
-                .finalLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .attachments_refs = {
+                {
+                     .attachment = 0,
+                     .layout = vk::ImageLayout::eColorAttachmentOptimal,
+                },
+                {
+                    .attachment = 1,
+                    .layout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+                }
             },
-            {
-                .flags = {},
-                .format = vk::Format::eD24UnormS8Uint,
-                .samples = vk::SampleCountFlagBits::e1,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eDontCare,
-                .initialLayout = vk::ImageLayout::eUndefined,
-                .finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-            }};
-
-        vk::SubpassDependency dependency{
-            .srcSubpass = VK_SUBPASS_EXTERNAL,
-            .dstSubpass = 0,
-            .srcStageMask = vk::PipelineStageFlagBits::eTransfer,
-            .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
-            .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-            .dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead,
-            .dependencyFlags = {},
+            .subpasses = {
+                {
+                    .flags = {},
+                    .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
+                    .colorAttachmentCount = 1,
+                    .pColorAttachments = &info.attachments_refs[0],
+                    .pDepthStencilAttachment = &info.attachments_refs[1]
+                }
+            },
+            .subpass_dependencies = {
+                {
+                    .srcSubpass = VK_SUBPASS_EXTERNAL,
+                    .dstSubpass = 0,
+                    .srcStageMask = vk::PipelineStageFlagBits::eTransfer,
+                    .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                    .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+                    .dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead,
+                    .dependencyFlags = {},
+                }
+            }
         };
-
-        m_pass = avk::create_render_pass(avk::context::device()->createRenderPass(
-            vk::RenderPassCreateInfo{
-                .flags = {},
-                .attachmentCount = std::size(pass_attachments),
-                .pAttachments = pass_attachments,
-                .subpassCount = 1,
-                .pSubpasses = &subpass,
-                .dependencyCount = 0,
-                .pDependencies = &dependency,
-            }));
+        // clang-format on
+        m_pass = avk::render_pass_wrapper(std::move(info));
     }
 
     vk::Image get_draw_attachment() const
@@ -138,12 +118,6 @@ public:
     }
 
 protected:
-    struct pipeline_data
-    {
-        avk::pipeline_layout pipeline_layout{};
-        avk::graphics_pipeline pipeline{};
-    };
-
 
     void create_shader(avk::shader_module& module, const std::string& path)
     {
@@ -290,29 +264,31 @@ protected:
                     .pDynamicStates = dyn_states,
                 };
 
-                m_model_primitive_pipelines[node.mesh].emplace_back(avk::create_graphics_pipeline(
-                    avk::context::device()->createGraphicsPipeline(
-                                              {},
-                                              vk::GraphicsPipelineCreateInfo{
-                                                  .stageCount = std::size(stages),
-                                                  .pStages = stages,
-                                                  .pVertexInputState = &vertex_input,
-                                                  .pInputAssemblyState = &input_assembly,
-                                                  .pTessellationState = nullptr,
-                                                  .pViewportState = &viewport,
-                                                  .pRasterizationState = &rasterization,
-                                                  .pMultisampleState = &multisample,
-                                                  .pDepthStencilState = &depth_stencil,
-                                                  .pColorBlendState = &color_blend,
-                                                  .pDynamicState = &dynamic_state,
-                                                  .layout = m_pipeline_layout,
+                // clang-format off
+                m_model_primitive_pipelines[node.mesh].emplace_back(
+                    avk::create_graphics_pipeline(
+                        avk::context::device()->createGraphicsPipeline(
+                              {},
+                              vk::GraphicsPipelineCreateInfo{
+                                  .stageCount = std::size(stages),
+                                  .pStages = stages,
+                                  .pVertexInputState = &vertex_input,
+                                  .pInputAssemblyState = &input_assembly,
+                                  .pTessellationState = nullptr,
+                                  .pViewportState = &viewport,
+                                  .pRasterizationState = &rasterization,
+                                  .pMultisampleState = &multisample,
+                                  .pDepthStencilState = &depth_stencil,
+                                  .pColorBlendState = &color_blend,
+                                  .pDynamicState = &dynamic_state,
+                                  .layout = m_pipeline_layout,
 
-                                                  .renderPass = m_pass,
-                                                  .subpass = 0,
-                                                  .basePipelineHandle = {},
-                                                  .basePipelineIndex = -1,
-                                              })
-                        .value));
+                                  .renderPass = m_pass.get_native_pass(),
+                                  .subpass = 0,
+                                  .basePipelineHandle = {},
+                                  .basePipelineIndex = -1,
+                              }).value));
+                // clang-format on
             }
         });
     }
@@ -359,7 +335,7 @@ protected:
 
         for_each_scene_node(
             model,
-            [&proj_matrix, &view_matrix, &models_transforms](const gltf::node& node, const glm::mat4& parent_transform){
+            [&proj_matrix, &view_matrix, &models_transforms](const gltf::node& node, const glm::mat4& parent_transform) {
                 auto local_transform = glm::mat4{1};
 
                 if (node.matrix) {
@@ -417,7 +393,7 @@ protected:
 
         command_buffer.beginRenderPass(
             vk::RenderPassBeginInfo{
-                .renderPass = m_pass,
+                .renderPass = m_pass.get_native_pass(),
                 .framebuffer = m_framebuffer,
                 .renderArea = {
                     .offset = {
@@ -452,20 +428,7 @@ protected:
 
             for (const auto& primitive : mesh->get_primitives()) {
                 command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *curr_pipeline++);
-                const auto& primitive_impl = static_cast<const gltf::gltf_vk::primitive&>(*primitive);
-                vk::DeviceSize vertex_buffer_offset = primitive_impl.get_vertex_buffer_offset();
-
-                std::vector<vk::Buffer> buffers(primitive_impl.get_vertex_bindings().size(), vertex_buffer);
-                std::vector<vk::DeviceSize> offsets(primitive_impl.get_vertex_bindings().size(), vertex_buffer_offset);
-
-                command_buffer.bindVertexBuffers(0, buffers.size(), buffers.data(), offsets.data());
-
-                if (primitive_impl.get_index_type() != vk::IndexType::eNoneKHR) {
-                    command_buffer.bindIndexBuffer(index_buffer, primitive_impl.get_index_buffer_offset(), primitive_impl.get_index_type());
-                    command_buffer.drawIndexed(primitive_impl.get_indices_data().indices_count, 1, 0, 0, 0);
-                } else {
-                    command_buffer.draw(primitive_impl.get_vertices_count(), 1, 0, 0);
-                }
+                gltf::draw_primitive(*primitive, vertex_buffer, index_buffer, command_buffer);
             }
         });
 
@@ -474,9 +437,9 @@ protected:
     }
 
 private:
-    avk::render_pass m_pass{};
-    avk::framebuffer m_framebuffer{};
+    avk::render_pass_wrapper m_pass{};
 
+    avk::framebuffer m_framebuffer{};
     std::vector<avk::vma_image> m_attachments{};
     std::vector<avk::image_view> m_attachments_views{};
 

@@ -48,7 +48,7 @@ namespace sandbox::hal::render::avk
 
 
         template<typename T1, typename T2>
-        decltype(auto) try_cast(const T1& value)
+        auto try_cast(const T1& value)
         {
             static_assert(std::is_same_v<T2, T1> || detail::is_explicitly_castable_v<T1, T2> || detail::is_as_castable_v<T1, T2>);
 

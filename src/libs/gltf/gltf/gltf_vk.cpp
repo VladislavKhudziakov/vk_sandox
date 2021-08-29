@@ -3,6 +3,7 @@
 #include "gltf_vk.hpp"
 
 #include <gltf/glb_parser.hpp>
+#include <gltf/vk_utils.hpp>
 
 #include <render/vk/errors_handling.hpp>
 #include <render/vk/utils.hpp>
@@ -14,7 +15,6 @@
 
 using namespace sandbox;
 using namespace sandbox::hal::render;
-#include <iostream>
 
 namespace
 {
@@ -290,10 +290,9 @@ void gltf::gltf_vk::primitive::set_vertices_format(const std::vector<vk::VertexI
         attribute.binding = curr_binding;
 
         m_bindings.emplace_back(vk::VertexInputBindingDescription{
-                .binding = curr_binding,
-                .stride = avk::get_format_info(static_cast<VkFormat>(attribute.format)).size,
-                .inputRate = vk::VertexInputRate::eVertex
-            });
+            .binding = curr_binding,
+            .stride = avk::get_format_info(static_cast<VkFormat>(attribute.format)).size,
+            .inputRate = vk::VertexInputRate::eVertex});
 
         curr_binding++;
     }

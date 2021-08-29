@@ -2,8 +2,6 @@
 
 #include "utils.hpp"
 
-#include <utils/conditions_helpers.hpp>
-
 #include <string>
 #include <stdexcept>
 #include <cstring>
@@ -86,99 +84,6 @@ sandbox::gltf::camera_type_value::operator sandbox::gltf::camera_type() const
     return type;
 }
 
-
-vk::Format sandbox::gltf::to_vk_format(sandbox::gltf::accessor_type_value accessor_type, sandbox::gltf::component_type component_type)
-{
-    switch (accessor_type) {
-        case accessor_type::scalar:
-            switch (component_type) {
-                case component_type::signed_byte:
-                    return vk::Format::eR8Sint;
-                case component_type::unsigned_byte:
-                    return vk::Format::eR8Uint;
-                case component_type::signed_short:
-                    return vk::Format::eR16Sint;
-                case component_type::unsigned_short:
-                    return vk::Format::eR16Uint;
-                case component_type::unsigned_int:
-                    return vk::Format::eR32Uint;
-                case component_type::float32:
-                    return vk::Format::eR32Sfloat;
-                default:
-                    throw std::runtime_error("Bad component type " + to_string(component_type));
-            }
-        case accessor_type::vec2:
-            switch (component_type) {
-                case component_type::signed_byte:
-                    return vk::Format::eR8G8Sint;
-                case component_type::unsigned_byte:
-                    return vk::Format::eR8G8Uint;
-                case component_type::signed_short:
-                    return vk::Format::eR16G16Sint;
-                case component_type::unsigned_short:
-                    return vk::Format::eR16G16Uint;
-                case component_type::unsigned_int:
-                    return vk::Format::eR32G32Uint;
-                case component_type::float32:
-                    return vk::Format::eR32G32Sfloat;
-                default:
-                    throw std::runtime_error("Bad component type " + to_string(component_type));
-            }
-        case accessor_type::vec3:
-            switch (component_type) {
-                case component_type::signed_byte:
-                    return vk::Format::eR8G8B8Sint;
-                case component_type::unsigned_byte:
-                    return vk::Format::eR8G8B8Uint;
-                case component_type::signed_short:
-                    return vk::Format::eR16G16B16Sint;
-                case component_type::unsigned_short:
-                    return vk::Format::eR16G16B16Uint;
-                case component_type::unsigned_int:
-                    return vk::Format::eR32G32B32Uint;
-                case component_type::float32:
-                    return vk::Format::eR32G32B32Sfloat;
-                default:
-                    throw std::runtime_error("Bad component type " + to_string(component_type));
-            }
-        case accessor_type::vec4:
-            switch (component_type) {
-                case component_type::signed_byte:
-                    return vk::Format::eR8G8B8A8Sint;
-                case component_type::unsigned_byte:
-                    return vk::Format::eR8G8B8A8Uint;
-                case component_type::signed_short:
-                    return vk::Format::eR16G16B16A16Sint;
-                case component_type::unsigned_short:
-                    return vk::Format::eR16G16B16A16Uint;
-                case component_type::unsigned_int:
-                    return vk::Format::eR32G32B32A32Uint;
-                case component_type::float32:
-                    return vk::Format::eR32G32B32A32Sfloat;
-                default:
-                    throw std::runtime_error("Bad component type " + to_string(component_type));
-            }
-        default:
-            throw std::runtime_error("Bad accessor type " + to_string(accessor_type));
-    }
-}
-
-
-vk::IndexType sandbox::gltf::to_vk_index_type(sandbox::gltf::accessor_type_value accessor_type, sandbox::gltf::component_type component_type)
-{
-    CHECK_MSG(accessor_type == accessor_type::scalar, "Cannot convert non scalar accessor type into vulkan index type.");
-
-    switch (component_type) {
-        case component_type::unsigned_byte:
-            return vk::IndexType::eUint8EXT;
-        case component_type::unsigned_short:
-            return vk::IndexType::eUint16;
-        case component_type::unsigned_int:
-            return vk::IndexType::eUint32;
-        default:
-            throw std::runtime_error("Cannot convert " + to_string(component_type) + " component type into vulkan index type.");
-    }
-}
 
 std::string sandbox::gltf::to_string(sandbox::gltf::accessor_type accessor_type)
 {

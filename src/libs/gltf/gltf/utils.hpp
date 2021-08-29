@@ -91,9 +91,6 @@ namespace sandbox::gltf
         camera_type type{camera_type::perspective};
     };
 
-    vk::Format to_vk_format(accessor_type_value accessor_type, component_type component_type);
-    vk::IndexType to_vk_index_type(accessor_type_value accessor_type, component_type component_type);
-
     size_t get_component_type_size(component_type component_type);
     size_t get_buffer_element_size(accessor_type_value accessor_type, component_type component_type);
 

@@ -9,7 +9,12 @@ using namespace sandbox::hal::render;
 
 
 std::pair<avk::vma_image, avk::image_view> sandbox::hal::render::avk::create_attachment(
-    uint32_t width, uint32_t height, vk::Format format, uint32_t queue_family, vk::ImageUsageFlags usage)
+    uint32_t width,
+    uint32_t height,
+    vk::Format format,
+    uint32_t queue_family,
+    vk::ImageUsageFlags usage,
+    vk::SampleCountFlagBits samples)
 {
     // clang-format off
     bool is_depth =
@@ -38,7 +43,7 @@ std::pair<avk::vma_image, avk::image_view> sandbox::hal::render::avk::create_att
             },
             .mipLevels = 1,
             .arrayLayers = 1,
-            .samples = vk::SampleCountFlagBits::e1,
+            .samples = samples,
             .tiling = vk::ImageTiling::eOptimal,
             .usage = usage,
             .sharingMode = vk::SharingMode::eExclusive,
@@ -116,7 +121,7 @@ avk::vma_buffer avk::create_staging_buffer(
 
 
 avk::framebuffer avk::create_framebuffer_from_attachments(
-    uint32_t width, uint32_t height, const vk::RenderPass& pass, vk::ImageView* attachments, uint32_t attachments_count)
+    uint32_t width, uint32_t height, const vk::RenderPass& pass, const vk::ImageView* attachments, uint32_t attachments_count)
 {
     return avk::create_framebuffer(
         avk::context::device()->createFramebuffer(
@@ -131,4 +136,87 @@ avk::framebuffer avk::create_framebuffer_from_attachments(
                 .height = height,
                 .layers = 1,
             }));
+}
+
+
+std::tuple<avk::framebuffer, std::vector<avk::vma_image>, std::vector<avk::image_view>>
+avk::create_framebuffer_from_pass(
+    uint32_t width,
+    uint32_t height,
+    uint32_t queue_family,
+    const vk::RenderPassCreateInfo& pass_info,
+    const vk::RenderPass& pass,
+    const std::vector<float>& attachments_scales,
+    const std::vector<vk::ImageUsageFlagBits>& attachments_usages)
+{
+    std::vector<avk::vma_image> images{};
+    std::vector<avk::image_view> images_views{};
+    std::vector<vk::ImageView> image_views_native{};
+
+    images.reserve(pass_info.attachmentCount);
+    images_views.reserve(pass_info.attachmentCount);
+    image_views_native.reserve(pass_info.attachmentCount);
+
+    for (int i = 0; i < pass_info.attachmentCount; ++i) {
+        const auto& attachment = pass_info.pAttachments[i];
+
+        uint32_t attachment_width = width;
+        uint32_t attachment_height = height;
+        vk::ImageUsageFlagBits attachment_usage = {};
+
+        if (i < attachments_scales.size() && attachments_scales[i] > 0) {
+            attachment_width *= attachments_scales[i];
+            attachment_height *= attachments_scales[i];
+        }
+
+        if (i < attachments_usages.size()) {
+            attachment_usage = attachments_usages[i];
+        }
+
+        auto [image, view] = create_attachment(
+            attachment_width,
+            attachment_height,
+            attachment.format,
+            queue_family,
+            attachment_usage,
+            attachment.samples);
+
+        vk::ImageView native_view = view;
+
+        images.emplace_back(std::move(image));
+        images_views.emplace_back(std::move(view));
+        image_views_native.emplace_back(native_view);
+    }
+
+    auto framebuffer = create_framebuffer_from_attachments(width, height, pass, image_views_native.data(), image_views_native.size());
+
+    return std::make_tuple(std::move(framebuffer), std::move(images), std::move(images_views));
+}
+
+
+avk::render_pass_wrapper::render_pass_wrapper(avk::pass_create_info info)
+    : m_info(std::move(info))
+    //    , m_attachments_refs(std::move(attachments_refs))
+    , m_pass_info{
+          .flags = {},
+          .attachmentCount = static_cast<uint32_t>(m_info.attachments.size()),
+          .pAttachments = m_info.attachments.data(),
+          .subpassCount = static_cast<uint32_t>(m_info.subpasses.size()),
+          .pSubpasses = m_info.subpasses.data(),
+          .dependencyCount = static_cast<uint32_t>(m_info.subpass_dependencies.size()),
+          .pDependencies = m_info.subpass_dependencies.data()}
+    , m_pass_handler{avk::create_render_pass(avk::context::device()->createRenderPass(m_pass_info))}
+{
+}
+
+
+const vk::RenderPassCreateInfo& avk::render_pass_wrapper::get_info() const
+{
+    return m_pass_info;
+}
+
+
+vk::RenderPass avk::render_pass_wrapper::get_native_pass() const
+{
+    return m_pass_handler.as<vk::RenderPass>();
 }
