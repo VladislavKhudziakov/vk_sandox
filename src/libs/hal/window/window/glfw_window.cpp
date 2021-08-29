@@ -5,7 +5,7 @@
 #include <window/vk_main_loop_update_listener.hpp>
 
 #include <render/vk/raii.hpp>
-#include <render/vk/utils.hpp>
+#include <render/vk/errors_handling.hpp>
 
 using namespace sandbox::hal;
 using namespace sandbox::hal::render;
@@ -295,6 +295,8 @@ namespace
 
             avk::context::init_device({.required_supported_surfaces = m_surface.handler_ptr(), .required_supported_surfaces_count = 1});
 
+            static_cast<vk_main_loop_update_listener*>(m_update_listener.get())->on_window_initialized();
+
             m_swapchain.set_swapcain_reset_listener([this](size_t width, size_t height) {
                 static_cast<vk_main_loop_update_listener*>(m_update_listener.get())->on_swapchain_reset(width, height);
             });
@@ -302,7 +304,7 @@ namespace
             m_swapchain.reset(m_window_handler.get(), m_surface);
         }
 
-        ~glw_window()
+        ~glw_window() override
         {
             avk::context::device()->waitIdle();
         }
@@ -499,16 +501,18 @@ namespace
 
             auto curr_semaphore = get_current_semaphore();
 
-            avk::context::queue(vk::QueueFlagBits::eGraphics, 0).submit(vk::SubmitInfo{
-                                                                            .waitSemaphoreCount = wait_semaphores.size(),
-                                                                            .pWaitSemaphores = wait_semaphores.data(),
-                                                                            .pWaitDstStageMask = m_wait_stages.data(),
-                                                                            .commandBufferCount = 1,
-                                                                            .pCommandBuffers = &current_command_buffer,
-                                                                            .signalSemaphoreCount = 1,
-                                                                            .pSignalSemaphores = &curr_semaphore,
-                                                                        },
-                                                                        signal_fence);
+            avk::context::queue(vk::QueueFlagBits::eGraphics, 0)
+                .submit(
+                    vk::SubmitInfo{
+                        .waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size()),
+                        .pWaitSemaphores = wait_semaphores.data(),
+                        .pWaitDstStageMask = m_wait_stages.data(),
+                        .commandBufferCount = 1,
+                        .pCommandBuffers = &current_command_buffer,
+                        .signalSemaphoreCount = 1,
+                        .pSignalSemaphores = &curr_semaphore,
+                    },
+                    signal_fence);
 
             m_swapchain.present(m_window_handler.get(), m_surface, &curr_semaphore, 1, 0);
         }

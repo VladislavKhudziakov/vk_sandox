@@ -10,6 +10,17 @@
 
 using namespace sandbox;
 
+
+namespace
+{
+    void do_if_found(const nlohmann::json& where, const std::string& what, const std::function<void(const nlohmann::json&)>& callback)
+    {
+        if (where.find(what) != where.end()) {
+            callback(where[what]);
+        }
+    };
+} // namespace
+
 gltf::primitive::primitive(const nlohmann::json& gltf_json, const nlohmann::json& primitive_json)
 {
     constexpr const char* attributes[] = {
@@ -100,14 +111,12 @@ int32_t gltf::primitive::get_material() const
 
 gltf::mesh::mesh(
     assets_factory& assets_factory,
-    const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
     const nlohmann::json& gltf_json,
     const nlohmann::json& mesh_json)
 {
     m_primitives.reserve(mesh_json["primitives"].size());
     for (const auto& primitive_json : mesh_json["primitives"]) {
         m_primitives.emplace_back(assets_factory.create_primitive(
-            buffers,
             gltf_json,
             primitive_json));
     }
@@ -266,7 +275,7 @@ void gltf::model::init_resources(const nlohmann::json& gltf_json)
 
     m_meshes.reserve(gltf_json["meshes"].size());
     for (const auto& mesh : gltf_json["meshes"]) {
-        m_meshes.emplace_back(m_assets_factory->create_mesh(m_buffers, gltf_json, mesh));
+        m_meshes.emplace_back(m_assets_factory->create_mesh(gltf_json, mesh));
     }
 
     if (gltf_json.find("materials") != gltf_json.end()) {
@@ -283,6 +292,15 @@ void gltf::model::init_resources(const nlohmann::json& gltf_json)
             m_skins.emplace_back(m_assets_factory->create_skin(m_buffers, gltf_json, skin));
         }
     }
+
+    if (gltf_json.find("cameras") != gltf_json.end()) {
+        m_cameras.reserve(gltf_json["cameras"]);
+        for (const auto& camera : gltf_json["cameras"]) {
+            m_cameras.emplace_back(m_assets_factory->create_camera(gltf_json, camera));
+        }
+    }
+
+    m_cameras.emplace_back(m_assets_factory->create_camera(gltf_json, {}));
 }
 
 
@@ -334,6 +352,12 @@ gltf::assets_factory& gltf::model::get_assets_factory()
 }
 
 
+const std::vector<std::unique_ptr<gltf::camera>>& gltf::model::get_cameras() const
+{
+    return m_cameras;
+}
+
+
 std::unique_ptr<gltf::scene> gltf::assets_factory::create_scene(
     const nlohmann::json& gltf_json, const nlohmann::json& scene_json)
 {
@@ -367,16 +391,14 @@ std::unique_ptr<gltf::skin> gltf::assets_factory::create_skin(
 
 
 std::unique_ptr<gltf::mesh> gltf::assets_factory::create_mesh(
-    const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
     const nlohmann::json& gltf_json,
     const nlohmann::json& mesh_json)
 {
-    return std::make_unique<gltf::mesh>(*this, buffers, gltf_json, mesh_json);
+    return std::make_unique<gltf::mesh>(*this, gltf_json, mesh_json);
 }
 
 
 std::unique_ptr<gltf::primitive> gltf::assets_factory::create_primitive(
-    const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
     const nlohmann::json& gltf_json,
     const nlohmann::json& primitive_json)
 {
@@ -396,15 +418,20 @@ std::unique_ptr<gltf::buffer> gltf::assets_factory::create_buffer(const std::str
 }
 
 
+std::unique_ptr<gltf::camera> gltf::assets_factory::create_camera(
+    const nlohmann::json& gltf_json, const nlohmann::json& camera_json)
+{
+    if (camera_json.empty()) {
+        return std::make_unique<camera>();
+    } else {
+        return std::make_unique<camera>(gltf_json, camera_json);
+    }
+}
+
+
 gltf::material::material(const nlohmann::json& gltf_json, const nlohmann::json& material_json)
 {
     using json = nlohmann::json;
-
-    auto do_if_found = [](const nlohmann::json& where, const std::string& what, const std::function<void(const nlohmann::json&)>& callback) {
-        if (where.find(what) != where.end()) {
-            callback(where[what]);
-        }
-    };
 
 
     auto set_texture_data = [](texture_data& data, const json& json_texture) {
@@ -430,7 +457,7 @@ gltf::material::material(const nlohmann::json& gltf_json, const nlohmann::json& 
         std::copy(src.begin(), src.end(), glm::value_ptr(dst));
     };
 
-    do_if_found(material_json, "pbrMetallicRoughness", [this, &do_if_found, &set_texture_data, &set_vector_data](const json& pbr_metallic_roughness_data) {
+    do_if_found(material_json, "pbrMetallicRoughness", [this, &set_texture_data, &set_vector_data](const json& pbr_metallic_roughness_data) {
         do_if_found(pbr_metallic_roughness_data, "baseColorFactor", [this, &set_vector_data](const json& color) {
             set_vector_data(color, m_pbr_metallic_roughness_data.base_color);
         });
@@ -527,4 +554,47 @@ float gltf::material::get_alpha_cutoff() const
 bool gltf::material::is_double_sided() const
 {
     return m_double_sided;
+}
+
+
+gltf::camera::camera(const nlohmann::json& gltf_json, const nlohmann::json& camera_json)
+    : m_type(camera_json["type"].get<std::string>())
+{
+    using json = nlohmann::json;
+
+    switch (m_type) {
+        case camera_type::perspective:
+            do_if_found(camera_json, "perspective", [this](const json& perspective_json) {
+                camera::perspective perspective{};
+
+                perspective.yfov = perspective_json["yfov"];
+                perspective.znear = perspective_json["znear"];
+
+                do_if_found(perspective_json, "aspectRatio", [this, &perspective](const json& perspective_json) {
+                    perspective.aspect_ratio = perspective_json["aspectRatio"].get<float>();
+                });
+
+                do_if_found(perspective_json, "zfar", [this, &perspective](const json& perspective_json) {
+                    perspective.zfar = perspective_json["zfar"].get<float>();
+                });
+
+                m_data = perspective;
+            });
+            break;
+        case camera_type::orthographic:
+            do_if_found(camera_json, "orthographic", [this](const json& orthographic_json) {
+                m_data = camera::orthographic{
+                    .xmag = orthographic_json["xmag"],
+                    .ymag = orthographic_json["ymag"],
+                    .zfar = orthographic_json["zfar"],
+                    .znear = orthographic_json["znear"]};
+            });
+            break;
+    }
+}
+
+
+gltf::camera_type gltf::camera::get_type() const
+{
+    return m_type;
 }

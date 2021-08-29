@@ -10,6 +10,10 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <optional>
+#include <variant>
+
+#define _USE_MATH_DEFINES
+#include <math.h>
 
 namespace sandbox::gltf
 {
@@ -26,7 +30,7 @@ namespace sandbox::gltf
         const utils::data& get_data() const;
 
     private:
-        utils::data m_data;
+        mutable utils::data m_data;
     };
 
 
@@ -73,7 +77,6 @@ namespace sandbox::gltf
     public:
         mesh(
             assets_factory& assets_factory,
-            const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
             const nlohmann::json& gltf_json,
             const nlohmann::json& mesh_json);
         virtual ~mesh() = default;
@@ -181,6 +184,43 @@ namespace sandbox::gltf
     };
 
 
+    class camera
+    {
+    public:
+        struct perspective
+        {
+            float aspect_ratio{0};
+            float yfov{90.0 * M_PI / 180.0};
+            float zfar{0};
+            float znear{0.01};
+        };
+
+        struct orthographic
+        {
+            float xmag{0};
+            float ymag{};
+            float zfar{};
+            float znear{0.01};
+        };
+
+        camera() = default;
+        camera(const nlohmann::json& gltf_json, const nlohmann::json& camera_json);
+        virtual ~camera() = default;
+
+        camera_type get_type() const;
+
+        template<typename DataType>
+        const DataType& get_data() const
+        {
+            return std::get<DataType>(m_data);
+        }
+
+    private:
+        camera_type_value m_type{};
+        std::variant<perspective, orthographic> m_data{perspective{}};
+    };
+
+
     class scene
     {
     public:
@@ -217,7 +257,6 @@ namespace sandbox::gltf
             const nlohmann::json& skin_json);
 
         virtual std::unique_ptr<mesh> create_mesh(
-            const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
             const nlohmann::json& gltf_json,
             const nlohmann::json& mesh_json);
 
@@ -226,9 +265,12 @@ namespace sandbox::gltf
         virtual std::unique_ptr<buffer> create_buffer(const std::string&);
 
         virtual std::unique_ptr<primitive> create_primitive(
-            const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
             const nlohmann::json& gltf_json,
             const nlohmann::json& primitive_json);
+
+        virtual std::unique_ptr<camera> create_camera(
+            const nlohmann::json& gltf_json,
+            const nlohmann::json& camera_json);
     };
 
 
@@ -246,6 +288,8 @@ namespace sandbox::gltf
         const std::vector<std::unique_ptr<skin>>& get_skins() const;
         const std::vector<std::unique_ptr<mesh>>& get_meshes() const;
         const std::vector<std::unique_ptr<buffer>>& get_buffers() const;
+        const std::vector<std::unique_ptr<camera>>& get_cameras() const;
+
 
         uint32_t get_current_scene() const;
 
@@ -262,6 +306,7 @@ namespace sandbox::gltf
         std::vector<std::unique_ptr<skin>> m_skins{};
         std::vector<std::unique_ptr<mesh>> m_meshes{};
         std::vector<std::unique_ptr<buffer>> m_buffers{};
+        std::vector<std::unique_ptr<camera>> m_cameras{};
 
         std::unique_ptr<assets_factory> m_assets_factory{};
     };

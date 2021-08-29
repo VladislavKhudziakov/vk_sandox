@@ -1,12 +1,11 @@
 make_bin(
     NAME
-        test_gltf
-    DEPENDS
-        hal_window
-        hal_filesystem
         samples_utils
+    LIB
+    LIB_TYPE
+        STATIC
+    DEPENDS
         gltf
-        hal_renderdoc
     RESOURCES_EXTENSIONS
         .glb
 )

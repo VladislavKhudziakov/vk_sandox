@@ -18,5 +18,7 @@ namespace sandbox::hal
         virtual vk::ImageLayout get_present_image_layout() const = 0;
         virtual vk::Extent2D get_present_image_size() const = 0;
         virtual std::vector<vk::Semaphore> get_wait_semaphores() const = 0;
+
+        virtual void on_window_initialized() = 0;
     };
 } // namespace sandbox::hal

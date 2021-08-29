@@ -1,6 +1,6 @@
 
 #include <render/vk/raii.hpp>
-#include <render/vk/utils.hpp>
+#include <render/vk/errors_handling.hpp>
 #include <window/vk_main_loop_update_listener.hpp>
 #include <filesystem/common_file.hpp>
 

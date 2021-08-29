@@ -55,8 +55,10 @@ sandbox::utils::data sandbox::hal::filesystem::common_file::read_all_and_move()
 {
     auto move_data = [this]() {
         const auto sz = m_data_buffer.size();
+        auto data_buffer = new uint8_t[sz];
+        std::memcpy(data_buffer, m_data_buffer.data(), m_data_buffer.size());
         return sandbox::utils::data::create_owning(
-            m_data_buffer.data(), [data = std::move(m_data_buffer)](uint8_t*) {}, sz);
+            data_buffer, [](uint8_t* data) { delete[] data; }, sz);
     };
 
     if (!m_data_buffer.empty()) {

@@ -26,18 +26,8 @@ sandbox::gltf::accessor_type_value::accessor_type_value(const char* value)
 
 
 sandbox::gltf::accessor_type_value::accessor_type_value(const std::string& value)
+    : accessor_type_value(value.c_str())
 {
-    if (value == ACCESSOR_TYPE_SCALAR) {
-        type = accessor_type::scalar;
-    } else if (value == ACCESSOR_TYPE_VEC2) {
-        type = accessor_type::vec2;
-    } else if (value == ACCESSOR_TYPE_VEC3) {
-        type = accessor_type::vec3;
-    } else if (value == ACCESSOR_TYPE_VEC4) {
-        type = accessor_type::vec4;
-    } else {
-        throw std::runtime_error("Bad accessor type value " + value);
-    }
 }
 
 
@@ -62,22 +52,38 @@ sandbox::gltf::alpha_mode_value::alpha_mode_value(const char* value)
 
 
 sandbox::gltf::alpha_mode_value::alpha_mode_value(const std::string& value)
+    : alpha_mode_value(value.c_str())
 {
-    if (value == ALPHA_MODE_OPAQUE) {
-        mode = alpha_mode::opaque;
-    } else if (value == ALPHA_MODE_MASK) {
-        mode = alpha_mode::mask;
-    } else if (value == ALPHA_MODE_BLEND) {
-        mode = alpha_mode::blend;
-    } else {
-        throw std::runtime_error("Bad alpha mode " + value);
-    }
 }
 
 
 sandbox::gltf::alpha_mode_value::operator sandbox::gltf::alpha_mode() const
 {
     return mode;
+}
+
+
+sandbox::gltf::camera_type_value::camera_type_value(const char* value)
+{
+    if (strcmp(CAMERA_TYPE_PERSPECTIVE, value) == 0) {
+        type = camera_type::perspective;
+    } else if (strcmp(CAMERA_TYPE_ORTHOGRAPHIC, value) == 0) {
+        type = camera_type::orthographic;
+    } else {
+        throw std::runtime_error("Bad camera type " + std::string(value));
+    }
+}
+
+
+sandbox::gltf::camera_type_value::camera_type_value(const std::string& value)
+    : camera_type_value(value.c_str())
+{
+}
+
+
+sandbox::gltf::camera_type_value::operator sandbox::gltf::camera_type() const
+{
+    return type;
 }
 
 

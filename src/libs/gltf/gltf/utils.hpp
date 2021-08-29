@@ -36,6 +36,12 @@ namespace sandbox::gltf
         mat4
     };
 
+    enum class camera_type
+    {
+        perspective,
+        orthographic
+    };
+
     struct accessor_type_value
     {
         constexpr static auto ACCESSOR_TYPE_SCALAR = "SCALAR";
@@ -68,6 +74,21 @@ namespace sandbox::gltf
         operator sandbox::gltf::alpha_mode() const;
 
         alpha_mode mode{alpha_mode::opaque};
+    };
+
+
+    struct camera_type_value
+    {
+        constexpr static auto CAMERA_TYPE_PERSPECTIVE = "perspective";
+        constexpr static auto CAMERA_TYPE_ORTHOGRAPHIC = "orthographic";
+
+        camera_type_value() = default;
+        camera_type_value(const char* value);
+        camera_type_value(const std::string& value);
+
+        operator sandbox::gltf::camera_type() const;
+
+        camera_type type{camera_type::perspective};
     };
 
     vk::Format to_vk_format(accessor_type_value accessor_type, component_type component_type);

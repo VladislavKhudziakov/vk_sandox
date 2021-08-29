@@ -3,7 +3,7 @@
 #include "context.hpp"
 
 #include <render/vk/raii.hpp>
-#include <render/vk/utils.hpp>
+#include <render/vk/errors_handling.hpp>
 
 #include <spdlog/spdlog.h>
 
@@ -382,11 +382,11 @@ private:
 
         vk::DeviceCreateInfo device_info{
             .flags = {},
-            .queueCreateInfoCount = queue_create_infos.size(),
+            .queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size()),
             .pQueueCreateInfos = queue_create_infos.data(),
-            .enabledLayerCount = device_layers.size(),
+            .enabledLayerCount = static_cast<uint32_t>(device_layers.size()),
             .ppEnabledLayerNames = device_layers.data(),
-            .enabledExtensionCount = device_extensions.size(),
+            .enabledExtensionCount = static_cast<uint32_t>(device_extensions.size()),
             .ppEnabledExtensionNames = device_extensions.data(),
             .pEnabledFeatures = &features};
 

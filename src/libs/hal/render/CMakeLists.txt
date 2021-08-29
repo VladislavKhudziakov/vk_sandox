@@ -10,6 +10,7 @@ make_bin(
         VulkanMemoryAllocator
         Vulkan::Vulkan
         spdlog
+        sandbox_utils
 )
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
