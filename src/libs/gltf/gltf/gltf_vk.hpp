@@ -39,6 +39,24 @@ namespace sandbox::gltf
             uint64_t m_index_buffer_offset{0};
         };
 
+        class texture : public gltf::texture
+        {
+        public:
+            texture(const nlohmann::json& gltf_json, const nlohmann::json& texture_json);
+
+            void set_vk_image(hal::render::avk::vma_image);
+            void set_vk_image_view( hal::render::avk::image_view);
+            void set_vk_sampler( hal::render::avk::sampler);
+
+            vk::Format get_format() const;
+
+        private:
+            hal::render::avk::vma_image m_vk_image{};
+            hal::render::avk::image_view m_vk_image_view{};
+            hal::render::avk::sampler m_vk_sampler{};
+        };
+
+
         class gltf_renderer
         {
         public:

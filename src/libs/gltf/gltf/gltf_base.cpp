@@ -8,6 +8,8 @@
 
 #include <glm/gtc/type_ptr.hpp>
 
+#include <stb/stb_image.h>
+
 using namespace sandbox;
 
 
@@ -40,43 +42,39 @@ gltf::primitive::primitive(const nlohmann::json& gltf_json, const nlohmann::json
             continue;
         }
 
-        const auto& accessor = gltf_json["accessors"][attribute->get<int32_t>()];
-        const auto& buffer_view = gltf_json["bufferViews"][accessor["bufferView"].get<int32_t>()];
+        const auto vert_buffer_accessor_data = extract_accessor_data_from_buffer(
+            gltf_json, gltf_json["accessors"][attribute->get<int32_t>()]);
 
-        const auto verts_count = accessor["count"].get<uint64_t>();
+        const auto verts_count = vert_buffer_accessor_data.count;
 
         if (m_vertices_count != 0) {
-            CHECK_MSG(m_vertices_count == verts_count, "Bad primitive vertices count.");
+            CHECK_MSG(m_vertices_count == vert_buffer_accessor_data.count, "Bad primitive vertices count.");
         } else {
             m_vertices_count = verts_count;
         }
 
         auto& attribute_data = m_attributes.emplace_back();
-        attribute_data.buffer = buffer_view["buffer"].get<uint32_t>();
-        attribute_data.buffer_length = get_buffer_element_size(
-                                           accessor["type"].get<std::string>(),
-                                           static_cast<gltf::component_type>(accessor["componentType"].get<int32_t>()))
-                                       * accessor["count"].get<uint64_t>();
-        attribute_data.buffer_offset = accessor["byteOffset"].get<uint64_t>() + buffer_view["byteOffset"].get<uint64_t>();
-
-        attribute_data.accessor_type = accessor["type"].get<std::string>();
-        attribute_data.component_type = static_cast<gltf::component_type>(accessor["componentType"].get<int32_t>());
+        attribute_data.buffer = vert_buffer_accessor_data.buffer;
+        attribute_data.buffer_length = vert_buffer_accessor_data.count * get_buffer_element_size(
+            vert_buffer_accessor_data.accessor_type,
+            vert_buffer_accessor_data.component_type);
+        attribute_data.buffer_offset = vert_buffer_accessor_data.buffer_offset;
+        attribute_data.accessor_type = vert_buffer_accessor_data.accessor_type;
+        attribute_data.component_type = vert_buffer_accessor_data.component_type;
     }
 
     if (auto indices = primitive_json.find("indices"); indices != primitive_json.end()) {
-        const auto& accessor = gltf_json["accessors"][indices->get<uint32_t>()];
-        const auto& buffer_view = gltf_json["bufferViews"][accessor["bufferView"].get<int32_t>()];
+        const auto index_buffer_accessor_data = extract_accessor_data_from_buffer(
+            gltf_json, gltf_json["accessors"][indices->get<int32_t>()]);
+        m_indices_data.buffer = index_buffer_accessor_data.buffer;
+        m_indices_data.buffer_offset = index_buffer_accessor_data.buffer_offset;
+        m_indices_data.indices_count = index_buffer_accessor_data.count;
+        m_indices_data.buffer_length = index_buffer_accessor_data.count * get_buffer_element_size(
+            index_buffer_accessor_data.accessor_type,
+            index_buffer_accessor_data.component_type);
 
-        m_indices_data.accessor_type = accessor["type"].get<std::string>();
-        m_indices_data.component_type = static_cast<gltf::component_type>(accessor["componentType"].get<int32_t>());
-
-        m_indices_data.buffer = buffer_view["buffer"].get<uint32_t>();
-        m_indices_data.indices_count = accessor["count"].get<uint64_t>();
-        m_indices_data.buffer_offset = accessor["byteOffset"].get<uint64_t>() + buffer_view["byteOffset"].get<uint64_t>();
-        m_indices_data.buffer_length = get_buffer_element_size(
-                                           accessor["type"].get<std::string>(),
-                                           static_cast<gltf::component_type>(accessor["componentType"].get<int32_t>()))
-                                       * accessor["count"].get<uint64_t>();
+        m_indices_data.accessor_type = index_buffer_accessor_data.accessor_type;
+        m_indices_data.component_type = index_buffer_accessor_data.component_type;
     }
 
     if (auto material = primitive_json.find("material"); material != primitive_json.end()) {
@@ -131,20 +129,17 @@ const std::vector<std::unique_ptr<gltf::primitive>>& gltf::mesh::get_primitives(
 
 gltf::skin::skin(const std::vector<std::unique_ptr<buffer>>& buffers, const nlohmann::json& gltf_json, const nlohmann::json& skin_json)
 {
-    const auto& accessor = gltf_json["accessors"][skin_json["inverseBindMatrices"].get<int32_t>()];
-    const auto& buffer_view = gltf_json["bufferViews"][accessor["bufferView"].get<int32_t>()];
-    const uint64_t matrix_data_ptr_offset = accessor["byteOffset"].get<uint64_t>() + buffer_view["byteOffset"].get<uint64_t>();
+    const auto accessor_data = extract_accessor_data_from_buffer(
+        gltf_json,  gltf_json["accessors"][skin_json["inverseBindMatrices"].get<int32_t>()]);
 
-    const auto buffer_index = gltf_json["bufferViews"]["buffer"].get<int32_t>();
-    const auto& curr_buffer = buffers[buffer_index];
+    const auto& curr_buffer = buffers[accessor_data.buffer];
     const uint8_t* buffer_data = curr_buffer->get_data().get_data();
 
-    auto data_size = get_buffer_element_size(
-                         accessor["type"].get<std::string>(),
-                         static_cast<sandbox::gltf::component_type>(accessor["componentType"].get<int32_t>()))
-                     * accessor["count"].get<uint64_t>();
+    const auto data_size = get_buffer_element_size(
+        accessor_data.accessor_type,
+        accessor_data.component_type) * accessor_data.count;
 
-    std::memcpy(glm::value_ptr(inverse_bind_matrix), buffer_data + matrix_data_ptr_offset, data_size);
+    std::memcpy(glm::value_ptr(inverse_bind_matrix), buffer_data + accessor_data.buffer_offset, data_size);
 
     joints = skin_json["joints"].get<std::vector<int32_t>>();
 }
@@ -244,6 +239,8 @@ gltf::model::model(const nlohmann::json& gltf_json, utils::data glb_data, std::u
 
 void gltf::model::init_resources(const nlohmann::json& gltf_json)
 {
+    using namespace nlohmann;
+
     m_buffers.reserve(gltf_json["buffers"].size());
 
     for (auto& buffer : gltf_json["buffers"]) {
@@ -278,29 +275,51 @@ void gltf::model::init_resources(const nlohmann::json& gltf_json)
         m_meshes.emplace_back(m_assets_factory->create_mesh(gltf_json, mesh));
     }
 
-    if (gltf_json.find("materials") != gltf_json.end()) {
-        for (const auto& material : gltf_json["materials"]) {
+    do_if_found(gltf_json, "materials", [&gltf_json, this](const json& materials) {
+        m_materials.reserve(materials.size());
+        for (const auto& material : materials) {
             m_materials.emplace_back(m_assets_factory->create_material(gltf_json, material));
         }
-    }
+    });
 
     m_materials.emplace_back(m_assets_factory->create_material(gltf_json, {}));
 
-    if (gltf_json.find("skins") != gltf_json.end()) {
-        m_skins.reserve(gltf_json["skins"]);
-        for (const auto& skin : gltf_json["skins"]) {
+    do_if_found(gltf_json, "skins", [&gltf_json, this](const json& skins) {
+        m_skins.reserve(skins.size());
+        for (const auto& skin : skins) {
             m_skins.emplace_back(m_assets_factory->create_skin(m_buffers, gltf_json, skin));
         }
-    }
+    });
 
-    if (gltf_json.find("cameras") != gltf_json.end()) {
-        m_cameras.reserve(gltf_json["cameras"]);
-        for (const auto& camera : gltf_json["cameras"]) {
+    do_if_found(gltf_json, "cameras", [&gltf_json, this](const json& cameras) {
+        m_cameras.reserve(cameras.size());
+        for (const auto& camera : cameras) {
             m_cameras.emplace_back(m_assets_factory->create_camera(gltf_json, camera));
         }
-    }
+    });
 
     m_cameras.emplace_back(m_assets_factory->create_camera(gltf_json, {}));
+
+    do_if_found(gltf_json, "textures", [&gltf_json, this](const json& textures) {
+        m_textures.reserve(textures.size());
+        for (const auto& texture : textures) {
+            m_textures.emplace_back(m_assets_factory->create_texture(gltf_json, texture));
+        }
+    });
+
+    do_if_found(gltf_json, "images", [&gltf_json, this](const json& images) {
+        m_images.reserve(images.size());
+        for (const auto& image : images) {
+            m_images.emplace_back(m_assets_factory->create_image(m_buffers, gltf_json, image));
+        }
+    });
+
+    do_if_found(gltf_json, "samplers", [&gltf_json, this](const json& samplers) {
+        m_samplers.reserve(samplers.size());
+        for (const auto& sampler : samplers) {
+            m_samplers.emplace_back(m_assets_factory->create_sampler(gltf_json, sampler));
+        }
+    });
 }
 
 
@@ -349,6 +368,24 @@ uint32_t gltf::model::get_current_scene() const
 gltf::assets_factory& gltf::model::get_assets_factory()
 {
     return *m_assets_factory;
+}
+
+
+const std::vector<std::unique_ptr<gltf::image>>& gltf::model::get_images() const
+{
+    return m_images;
+}
+
+
+const std::vector<std::unique_ptr<gltf::texture>>& gltf::model::get_textures() const
+{
+    return m_textures;
+}
+
+
+const std::vector<std::unique_ptr<gltf::sampler>>& gltf::model::get_samplers() const
+{
+    return m_samplers;
 }
 
 
@@ -426,6 +463,27 @@ std::unique_ptr<gltf::camera> gltf::assets_factory::create_camera(
     } else {
         return std::make_unique<camera>(gltf_json, camera_json);
     }
+}
+
+
+std::unique_ptr<gltf::texture> gltf::assets_factory::create_texture(const nlohmann::json& gltf_json, const nlohmann::json& texture_json)
+{
+    return std::make_unique<gltf::texture>(gltf_json, texture_json);
+}
+
+
+std::unique_ptr<gltf::image> gltf::assets_factory::create_image(
+    const std::vector<std::unique_ptr<buffer>>& buffers,
+    const nlohmann::json& gltf_json,
+    const nlohmann::json& image_json)
+{
+    return std::make_unique<image>(buffers, gltf_json, image_json);
+}
+
+
+std::unique_ptr<gltf::sampler> gltf::assets_factory::create_sampler(const nlohmann::json& gltf_json, const nlohmann::json& sampler_json)
+{
+    return std::make_unique<sampler>(gltf_json, sampler_json);
 }
 
 
@@ -597,4 +655,191 @@ gltf::camera::camera(const nlohmann::json& gltf_json, const nlohmann::json& came
 gltf::camera_type gltf::camera::get_type() const
 {
     return m_type;
+}
+
+
+gltf::texture::texture(const nlohmann::json& gltf_json, const nlohmann::json& texture_json)
+{
+    m_sampler = texture_json["sampler"];
+    m_source = texture_json["source"];
+}
+
+
+uint32_t gltf::texture::get_sampler() const
+{
+    return m_sampler;
+}
+
+
+uint32_t gltf::texture::get_image() const
+{
+    return m_source;
+}
+
+
+gltf::image::image(
+    const std::vector<std::unique_ptr<buffer>>& buffers,
+    const nlohmann::json& gltf_json,
+    const nlohmann::json& image_json)
+{
+    using namespace nlohmann;
+
+    do_if_found(image_json, "uri", [this](const json& value) {
+        int w, h, c;
+        auto image_ptr = stbi_load(value.get<std::string>().c_str(), &w, &h, &c, 0);
+
+        assert(image_ptr);
+
+        m_width = w;
+        m_height = h;
+        m_components_count = c;
+
+        m_data = image_handler(image_ptr, [](const uint8_t* image) {stbi_image_free(const_cast<uint8_t*>(image));});
+    });
+
+    do_if_found(image_json, "bufferView", [this, &buffers](const json& buffer_view) {
+        const auto [data, data_length] = extract_buffer_view_data_from_buffer(buffer_view, buffers);
+
+        int w, h, c;
+        auto image_ptr = stbi_load_from_memory(
+            static_cast<const stbi_uc*>(data), data_length, &w, &h, &c, 0);
+
+        assert(image_ptr);
+
+        m_width = w;
+        m_height = h;
+        m_components_count = c;
+
+        m_data = image_handler(image_ptr, [](const uint8_t* image) {stbi_image_free(const_cast<uint8_t*>(image));});
+    });
+
+    do_if_found(image_json, "mimeType", [this](const json& value) {
+        m_mime_type = value.get<std::string>();
+    });
+}
+
+
+gltf::image_mime_type gltf::image::get_mime() const
+{
+    return m_mime_type;
+}
+
+
+size_t gltf::image::get_width() const
+{
+    return m_width;
+}
+
+
+size_t gltf::image::get_height() const
+{
+    return m_height;
+}
+
+
+size_t gltf::image::get_components_count() const
+{
+    return m_components_count;
+}
+
+
+const uint8_t* gltf::image::get_pixels() const
+{
+    return m_data.get();
+}
+
+
+gltf::sampler::sampler(const nlohmann::json& gltf_json, const nlohmann::json& sampler_json)
+{
+    using namespace nlohmann;
+
+    do_if_found(sampler_json, "magFilter", [this](const json& value) {
+        m_mag_filter = static_cast<sampler_filter_type>(value.get<uint32_t>());
+    });
+
+    do_if_found(sampler_json, "minFilter", [this](const json& value) {
+        m_min_filter = static_cast<sampler_filter_type>(value.get<uint32_t>());
+    });
+
+    do_if_found(sampler_json, "wrapS", [this](const json& value) {
+        m_wrap_s = static_cast<sampler_wrap_type>(value.get<uint32_t>());
+    });
+
+    do_if_found(sampler_json, "wrapT", [this](const json& value) {
+        m_wrap_t = static_cast<sampler_wrap_type>(value.get<uint32_t>());
+    });
+}
+
+
+gltf::sampler_filter_type gltf::sampler::get_mag_filter() const
+{
+    return m_mag_filter;
+}
+
+
+gltf::sampler_filter_type gltf::sampler::get_min_filter() const
+{
+    return m_min_filter;
+}
+
+
+gltf::sampler_wrap_type gltf::sampler::get_wrap_s() const
+{
+    return m_wrap_s;
+}
+
+
+gltf::sampler_wrap_type gltf::sampler::get_wrap_t() const
+{
+    return m_wrap_t;
+}
+
+
+std::pair<const void*, size_t> gltf::extract_buffer_view_data_from_buffer(
+    const nlohmann::json& buffer_view,
+    const std::vector<std::unique_ptr<gltf::buffer>>& buffers)
+{
+    const auto offset = buffer_view["byteOffset"].get<uint64_t>();
+    const auto data_length = buffer_view["length"].get<uint64_t>();
+    const auto buffer = buffer_view["buffer"].get<uint32_t>();
+    const auto* data = buffers[buffer]->get_data().get_data() + offset;
+
+    return {static_cast<const void*>(data), data_length};
+}
+
+
+gltf::accessor_data gltf::extract_accessor_data_from_buffer(
+    const nlohmann::json& gltf,
+    const nlohmann::json& accessor)
+{
+    const auto& buffer_view = gltf["bufferViews"][accessor["bufferView"].get<uint32_t>()];
+    gltf::accessor_data result {
+        .buffer = buffer_view["buffer"].get<uint32_t>(),
+        .buffer_offset = accessor["byteOffset"].get<uint64_t>() + buffer_view["byteOffset"].get<uint64_t>(),
+        .component_type = static_cast<gltf::component_type>(accessor["componentType"].get<uint32_t>()),
+        .accessor_type = accessor_type_value(accessor["type"].get<std::string>()),
+        .count =  accessor["count"].get<size_t>(),
+    };
+
+    do_if_found(accessor, "min", [&result](const nlohmann::json& min) {
+        const auto data = min.get<std::vector<float>>();
+
+        if (data.size() != 3) {
+            return;
+        }
+
+        std::memcpy(glm::value_ptr(result.min_bound), data.data(), sizeof(result.min_bound));
+    });
+
+    do_if_found(accessor, "max", [&result](const nlohmann::json& max) {
+        const auto data = max.get<std::vector<float>>();
+
+        if (data.size() != 3) {
+            return;
+        }
+
+        std::memcpy(glm::value_ptr(result.max_bound), data.data(), sizeof(result.min_bound));
+    });
+
+    return result;
 }

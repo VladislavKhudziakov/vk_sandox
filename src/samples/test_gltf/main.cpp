@@ -118,7 +118,6 @@ public:
     }
 
 protected:
-
     void create_shader(avk::shader_module& module, const std::string& path)
     {
         if (module) {
@@ -170,125 +169,15 @@ protected:
             for (const auto& primitive : mesh->get_primitives()) {
                 const auto& primitive_impl = static_cast<const gltf::gltf_vk::primitive&>(*primitive);
 
-                vk::PipelineShaderStageCreateInfo stages[] = {
-                    vk::PipelineShaderStageCreateInfo{
-                        .flags = {},
-                        .stage = vk::ShaderStageFlagBits::eVertex,
-                        .module = m_vertex_shader,
-                        .pName = "main",
+                m_model_primitive_pipelines[node.mesh].emplace_back(gltf::create_pipeline_from_primitive(
+                    *primitive,
+                    {
+                        {m_vertex_shader, vk::ShaderStageFlagBits::eVertex},
+                        {m_fragment_shader, vk::ShaderStageFlagBits::eFragment}
                     },
-                    vk::PipelineShaderStageCreateInfo{
-                        .flags = {},
-                        .stage = vk::ShaderStageFlagBits::eFragment,
-                        .module = m_fragment_shader,
-                        .pName = "main",
-                    }};
-
-                const auto& vert_attrs = primitive_impl.get_vertex_attributes();
-                const auto& vert_bindings = primitive_impl.get_vertex_bindings();
-
-                vk::PipelineVertexInputStateCreateInfo vertex_input{
-                    .flags = {},
-                    .vertexBindingDescriptionCount = static_cast<uint32_t>(vert_bindings.size()),
-                    .pVertexBindingDescriptions = vert_bindings.data(),
-                    .vertexAttributeDescriptionCount = static_cast<uint32_t>(vert_attrs.size()),
-                    .pVertexAttributeDescriptions = vert_attrs.data()};
-
-                vk::PipelineInputAssemblyStateCreateInfo input_assembly{
-                    .flags = {},
-                    .topology = vk::PrimitiveTopology::eTriangleList,
-                    .primitiveRestartEnable = VK_FALSE};
-
-                // clang-format off
-                vk::PipelineColorBlendAttachmentState attachment_blend{
-                    .blendEnable = VK_FALSE,
-                    .colorWriteMask =
-                        vk::ColorComponentFlagBits::eR |
-                        vk::ColorComponentFlagBits::eG |
-                        vk::ColorComponentFlagBits::eB |
-                        vk::ColorComponentFlagBits::eA
-                };
-                // clang-format on
-
-                vk::PipelineColorBlendStateCreateInfo color_blend{
-                    .flags = {},
-                    .logicOpEnable = VK_FALSE,
-                    .logicOp = {},
-                    .attachmentCount = 1,
-                    .pAttachments = &attachment_blend};
-
-                vk::PipelineRasterizationStateCreateInfo rasterization{
-                    .flags = {},
-                    .depthClampEnable = VK_FALSE,
-                    .rasterizerDiscardEnable = VK_FALSE,
-                    .polygonMode = vk::PolygonMode::eFill,
-                    .cullMode = vk::CullModeFlagBits::eNone,
-                    .frontFace = vk::FrontFace::eCounterClockwise,
-                    .depthBiasEnable = VK_FALSE,
-                };
-
-                vk::PipelineViewportStateCreateInfo viewport{
-                    .flags = {},
-                    .viewportCount = 1,
-                    .scissorCount = 1,
-                };
-
-                vk::PipelineDepthStencilStateCreateInfo depth_stencil{
-                    .flags = {},
-                    .depthTestEnable = VK_TRUE,
-                    .depthWriteEnable = VK_TRUE,
-                    .depthCompareOp = vk::CompareOp::eLessOrEqual,
-                    .depthBoundsTestEnable = VK_FALSE,
-                    .stencilTestEnable = VK_FALSE};
-
-                vk::SampleMask sampleMask{};
-                vk::PipelineMultisampleStateCreateInfo multisample{
-                    .flags = {},
-                    .rasterizationSamples = vk::SampleCountFlagBits::e1,
-                    .sampleShadingEnable = VK_FALSE,
-                    .minSampleShading = 0,
-                    .pSampleMask = nullptr,
-                    .alphaToCoverageEnable = VK_FALSE,
-                    .alphaToOneEnable = VK_FALSE,
-                };
-
-
-                vk::DynamicState dyn_states[]{
-                    vk::DynamicState::eViewport,
-                    vk::DynamicState::eScissor,
-                };
-
-                vk::PipelineDynamicStateCreateInfo dynamic_state{
-                    .flags = {},
-                    .dynamicStateCount = std::size(dyn_states),
-                    .pDynamicStates = dyn_states,
-                };
-
-                // clang-format off
-                m_model_primitive_pipelines[node.mesh].emplace_back(
-                    avk::create_graphics_pipeline(
-                        avk::context::device()->createGraphicsPipeline(
-                              {},
-                              vk::GraphicsPipelineCreateInfo{
-                                  .stageCount = std::size(stages),
-                                  .pStages = stages,
-                                  .pVertexInputState = &vertex_input,
-                                  .pInputAssemblyState = &input_assembly,
-                                  .pTessellationState = nullptr,
-                                  .pViewportState = &viewport,
-                                  .pRasterizationState = &rasterization,
-                                  .pMultisampleState = &multisample,
-                                  .pDepthStencilState = &depth_stencil,
-                                  .pColorBlendState = &color_blend,
-                                  .pDynamicState = &dynamic_state,
-                                  .layout = m_pipeline_layout,
-
-                                  .renderPass = m_pass.get_native_pass(),
-                                  .subpass = 0,
-                                  .basePipelineHandle = {},
-                                  .basePipelineIndex = -1,
-                              }).value));
-                // clang-format on
+                    m_pipeline_layout,
+                    m_pass.get_native_pass(),
+                    0));
             }
         });
     }

@@ -34,6 +34,73 @@ namespace sandbox::gltf
     };
 
 
+    class texture
+    {
+    public:
+        texture(const nlohmann::json& gltf_json, const nlohmann::json& texture_json);
+        virtual ~texture() = default;
+
+        uint32_t get_sampler() const;
+        uint32_t get_image() const;
+
+    private:
+        uint32_t m_sampler{0};
+        uint32_t m_source{0};
+    };
+
+
+    class image
+    {
+    public:
+        image(
+            const std::vector<std::unique_ptr<buffer>>& buffers,
+            const nlohmann::json& gltf_json,
+            const nlohmann::json& image_json);
+
+        virtual ~image() = default;
+
+        size_t get_width() const;
+        size_t get_height() const;
+        size_t get_components_count() const;
+
+        const uint8_t* get_pixels() const;
+
+        image_mime_type get_mime() const;
+
+    private:
+        using image_handler = std::unique_ptr<uint8_t, std::function<void(const uint8_t*)>>;
+
+        size_t m_width{0};
+        size_t m_height{0};
+        size_t m_components_count{0};
+
+        image_handler m_data{nullptr, [](const uint8_t*){}};
+
+        image_mime_type_value m_mime_type{};
+    };
+
+
+    class sampler
+    {
+    public:
+        sampler(const nlohmann::json& gltf_json, const nlohmann::json& sampler_json);
+        virtual ~sampler() = default;
+
+        sampler_filter_type get_mag_filter() const;
+        sampler_filter_type get_min_filter() const;
+
+        sampler_wrap_type get_wrap_s() const;
+        sampler_wrap_type get_wrap_t() const;
+
+    private:
+        sampler_filter_type m_mag_filter{sampler_filter_type::linear_mipmap_linear};
+        sampler_filter_type m_min_filter{sampler_filter_type::linear_mipmap_linear};
+
+        sampler_wrap_type m_wrap_s{sampler_wrap_type::clamp_to_edge};
+        sampler_wrap_type m_wrap_t{sampler_wrap_type::clamp_to_edge};
+    };
+
+
     class primitive
     {
     public:
@@ -42,7 +109,7 @@ namespace sandbox::gltf
             uint32_t buffer{0};
             uint64_t buffer_offset{0};
             uint64_t buffer_length{0};
-            gltf::accessor_type_value accessor_type{};
+            gltf::accessor_type accessor_type{};
             gltf::component_type component_type{};
         };
 
@@ -52,7 +119,7 @@ namespace sandbox::gltf
             uint64_t indices_count{0};
             uint64_t buffer_offset{0};
             uint64_t buffer_length{0};
-            gltf::accessor_type_value accessor_type{};
+            gltf::accessor_type accessor_type{};
             gltf::component_type component_type{};
         };
 
@@ -271,6 +338,19 @@ namespace sandbox::gltf
         virtual std::unique_ptr<camera> create_camera(
             const nlohmann::json& gltf_json,
             const nlohmann::json& camera_json);
+
+        virtual std::unique_ptr<texture> create_texture(
+            const nlohmann::json& gltf_json,
+            const nlohmann::json& texture_json);
+
+        virtual std::unique_ptr<image> create_image(
+            const std::vector<std::unique_ptr<buffer>>& buffers,
+            const nlohmann::json& gltf_json,
+            const nlohmann::json& image_json);
+
+        virtual std::unique_ptr<sampler> create_sampler(
+            const nlohmann::json& gltf_json,
+            const nlohmann::json& sampler_json);
     };
 
 
@@ -289,7 +369,9 @@ namespace sandbox::gltf
         const std::vector<std::unique_ptr<mesh>>& get_meshes() const;
         const std::vector<std::unique_ptr<buffer>>& get_buffers() const;
         const std::vector<std::unique_ptr<camera>>& get_cameras() const;
-
+        const std::vector<std::unique_ptr<image>>& get_images() const;
+        const std::vector<std::unique_ptr<texture>>& get_textures() const;
+        const std::vector<std::unique_ptr<sampler>>& get_samplers() const;
 
         uint32_t get_current_scene() const;
 
@@ -306,8 +388,39 @@ namespace sandbox::gltf
         std::vector<std::unique_ptr<skin>> m_skins{};
         std::vector<std::unique_ptr<mesh>> m_meshes{};
         std::vector<std::unique_ptr<buffer>> m_buffers{};
+        std::vector<std::unique_ptr<texture>> m_textures{};
+        std::vector<std::unique_ptr<image>> m_images{};
+        std::vector<std::unique_ptr<sampler>> m_samplers{};
         std::vector<std::unique_ptr<camera>> m_cameras{};
 
         std::unique_ptr<assets_factory> m_assets_factory{};
     };
+
+
+    struct accessor_data
+    {
+        constexpr static auto BOUND_MIN_VALUE = std::numeric_limits<float>::min();
+        constexpr static auto BOUND_MAX_VALUE = std::numeric_limits<float>::max();
+
+        uint32_t buffer{0};
+        uint64_t buffer_offset{0};
+
+        glm::vec3 min_bound{BOUND_MAX_VALUE, BOUND_MAX_VALUE, BOUND_MAX_VALUE};
+        glm::vec3 max_bound{BOUND_MIN_VALUE, BOUND_MIN_VALUE, BOUND_MIN_VALUE};
+
+        component_type component_type;
+        accessor_type accessor_type;
+
+        size_t count;
+    };
+
+
+    accessor_data extract_accessor_data_from_buffer(
+        const nlohmann::json& gltf,
+        const nlohmann::json& accessor);
+
+
+    std::pair<const void*, size_t> extract_buffer_view_data_from_buffer(
+        const nlohmann::json& buffer_view,
+        const std::vector<std::unique_ptr<buffer>>& buffers);
 } // namespace sandbox::gltf

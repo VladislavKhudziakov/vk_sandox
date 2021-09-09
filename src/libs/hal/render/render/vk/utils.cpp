@@ -196,7 +196,6 @@ avk::create_framebuffer_from_pass(
 
 avk::render_pass_wrapper::render_pass_wrapper(avk::pass_create_info info)
     : m_info(std::move(info))
-    //    , m_attachments_refs(std::move(attachments_refs))
     , m_pass_info{
           .flags = {},
           .attachmentCount = static_cast<uint32_t>(m_info.attachments.size()),

@@ -1,14 +1,16 @@
 #include "vk_utils.hpp"
-
 #include "gltf_vk.hpp"
-
-
 #include <utils/conditions_helpers.hpp>
 
+using namespace sandbox::hal::render;
 
-vk::IndexType sandbox::gltf::to_vk_index_type(sandbox::gltf::accessor_type_value accessor_type, sandbox::gltf::component_type component_type)
+vk::IndexType sandbox::gltf::to_vk_index_type(
+    sandbox::gltf::accessor_type accessor_type,
+    sandbox::gltf::component_type component_type)
 {
-    CHECK_MSG(accessor_type == accessor_type::scalar, "Cannot convert non scalar accessor type into vulkan index type.");
+    CHECK_MSG(
+        accessor_type == accessor_type::scalar,
+        "Cannot convert non scalar accessor type into vulkan index type.");
 
     switch (component_type) {
         case component_type::unsigned_byte:
@@ -18,12 +20,15 @@ vk::IndexType sandbox::gltf::to_vk_index_type(sandbox::gltf::accessor_type_value
         case component_type::unsigned_int:
             return vk::IndexType::eUint32;
         default:
-            throw std::runtime_error("Cannot convert " + to_string(component_type) + " component type into vulkan index type.");
+            throw std::runtime_error(
+                "Cannot convert " + to_string(component_type) + " component type into vulkan index type.");
     }
 }
 
 
-vk::Format sandbox::gltf::to_vk_format(sandbox::gltf::accessor_type_value accessor_type, sandbox::gltf::component_type component_type)
+vk::Format sandbox::gltf::to_vk_format(
+    sandbox::gltf::accessor_type accessor_type,
+    sandbox::gltf::component_type component_type)
 {
     switch (accessor_type) {
         case accessor_type::scalar:
@@ -129,6 +134,225 @@ void sandbox::gltf::draw_primitive(
 }
 
 
+vk::SamplerAddressMode sandbox::gltf::to_vk_sampler_wrap(sandbox::gltf::sampler_wrap_type wrap)
+{
+    switch (wrap) {
+        case sampler_wrap_type::repeat:
+            return vk::SamplerAddressMode::eRepeat;
+        case sampler_wrap_type::clamp_to_edge:
+            return vk::SamplerAddressMode::eClampToEdge;
+        case sampler_wrap_type::mirrored_repeat:
+            return vk::SamplerAddressMode::eMirroredRepeat;
+        default:
+            throw std::runtime_error("Bad sampler wrap type.");
+    }
+}
+
+
+std::pair<vk::Filter, vk::SamplerMipmapMode> sandbox::gltf::to_vk_sampler_filter(sandbox::gltf::sampler_filter_type filter)
+{
+    switch (filter) {
+        case sampler_filter_type::nearest:
+            [[fallthrough]];
+        case sampler_filter_type::near_mipmap_nearest:
+            return {vk::Filter::eNearest, vk::SamplerMipmapMode::eNearest};
+        case sampler_filter_type::linear:
+            [[fallthrough]];
+        case sampler_filter_type::linear_mipmap_nearest:
+            return {vk::Filter::eLinear, vk::SamplerMipmapMode::eNearest};
+        case sampler_filter_type::near_mipmap_linear:
+            return {vk::Filter::eNearest, vk::SamplerMipmapMode::eLinear};
+        case sampler_filter_type::linear_mipmap_linear:
+            return {vk::Filter::eLinear, vk::SamplerMipmapMode::eLinear};
+        default:
+            throw std::runtime_error("Bad sampler filter type.");
+    }
+}
+
+
+bool sandbox::gltf::need_mips(sandbox::gltf::sampler_filter_type filter)
+{
+    // clang-format off
+    return filter == sampler_filter_type::linear_mipmap_linear ||
+           filter == sampler_filter_type::near_mipmap_nearest ||
+           filter == sampler_filter_type::linear_mipmap_nearest ||
+           filter == sampler_filter_type::near_mipmap_linear;
+    // clang-format on
+}
+
+
+sandbox::hal::render::avk::graphics_pipeline sandbox::gltf::create_pipeline_from_primitive(
+    const sandbox::gltf::primitive& primitive,
+    const std::vector<std::pair<vk::ShaderModule, vk::ShaderStageFlagBits>>& stages,
+    vk::PipelineLayout layout,
+    vk::RenderPass pass,
+    uint32_t subpass,
+    sandbox::gltf::pipeline_primitive_topology topology,
+    sandbox::gltf::pipeline_blend_mode blend,
+    bool backfaces,
+    bool zwrite,
+    bool ztest,
+    bool color_write)
+{
+    // clang-format off
+
+    auto vk_bool = [](bool flag) {
+    return flag ? VK_TRUE : VK_FALSE;
+    };
+
+    const auto& primitive_impl = static_cast<const gltf::gltf_vk::primitive&>(primitive);
+
+    std::vector<vk::PipelineShaderStageCreateInfo> pipeline_stages{};
+    pipeline_stages.reserve(stages.size());
+
+    for (const auto [module, stage] : stages) {
+        pipeline_stages.emplace_back(vk::PipelineShaderStageCreateInfo{
+            .flags = {},
+            .stage = stage,
+            .module = module,
+            .pName = "main",
+        });
+    }
+
+    const auto& vert_attrs = primitive_impl.get_vertex_attributes();
+    const auto& vert_bindings = primitive_impl.get_vertex_bindings();
+
+    vk::PipelineVertexInputStateCreateInfo vertex_input{
+        .flags = {},
+        .vertexBindingDescriptionCount = static_cast<uint32_t>(vert_bindings.size()),
+        .pVertexBindingDescriptions = vert_bindings.data(),
+        .vertexAttributeDescriptionCount = static_cast<uint32_t>(vert_attrs.size()),
+        .pVertexAttributeDescriptions = vert_attrs.data()
+    };
+
+    vk::PipelineInputAssemblyStateCreateInfo input_assembly{
+        .flags = {},
+        .topology = vk::PrimitiveTopology::eTriangleList,
+        .primitiveRestartEnable = VK_FALSE
+    };
+
+    vk::Bool32 blend_enabled{VK_FALSE};
+    vk::ColorComponentFlags color_write_mask{0};
+
+    switch (blend) {
+        case pipeline_blend_mode::none:
+            break;
+    }
+
+    if (color_write) {
+        color_write_mask =
+            vk::ColorComponentFlagBits::eR |
+            vk::ColorComponentFlagBits::eG |
+            vk::ColorComponentFlagBits::eB |
+            vk::ColorComponentFlagBits::eA;
+    }
+
+    vk::PipelineColorBlendAttachmentState attachment_blend{
+        .blendEnable = blend_enabled,
+        .colorWriteMask = color_write_mask,
+    };
+
+    vk::PipelineColorBlendStateCreateInfo color_blend{
+        .flags = {},
+        .logicOpEnable = VK_FALSE,
+        .logicOp = {},
+        .attachmentCount = 1,
+        .pAttachments = &attachment_blend
+    };
+
+    vk::PolygonMode polygon_mode{};
+
+    vk::CullModeFlags cull_mode = backfaces ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack;
+
+    switch (topology) {
+        case pipeline_primitive_topology::triangles:
+            polygon_mode = vk::PolygonMode::eFill;
+            break;
+        case pipeline_primitive_topology::lines:
+            polygon_mode = vk::PolygonMode::eLine;
+            cull_mode = vk::CullModeFlagBits::eNone;
+            break;
+        case pipeline_primitive_topology::points:
+            polygon_mode = vk::PolygonMode::ePoint;
+            cull_mode = vk::CullModeFlagBits::eNone;
+            break;
+    }
+
+    vk::PipelineRasterizationStateCreateInfo rasterization{
+        .flags = {},
+        .depthClampEnable = VK_FALSE,
+        .rasterizerDiscardEnable = VK_FALSE,
+        .polygonMode = polygon_mode,
+        .cullMode = cull_mode,
+        .frontFace = vk::FrontFace::eCounterClockwise,
+        .depthBiasEnable = VK_FALSE,
+    };
+
+    vk::PipelineViewportStateCreateInfo viewport{
+        .flags = {},
+        .viewportCount = 1,
+        .scissorCount = 1,
+    };
+
+    vk::PipelineDepthStencilStateCreateInfo depth_stencil{
+        .flags = {},
+        .depthTestEnable = vk_bool(ztest),
+        .depthWriteEnable = vk_bool(zwrite),
+        .depthCompareOp = vk::CompareOp::eLessOrEqual,
+        .depthBoundsTestEnable = VK_FALSE,
+        .stencilTestEnable = VK_FALSE
+    };
+
+    vk::SampleMask sampleMask{};
+    vk::PipelineMultisampleStateCreateInfo multisample{
+        .flags = {},
+        .rasterizationSamples = vk::SampleCountFlagBits::e1,
+        .sampleShadingEnable = VK_FALSE,
+        .minSampleShading = 0,
+        .pSampleMask = nullptr,
+        .alphaToCoverageEnable = VK_FALSE,
+        .alphaToOneEnable = VK_FALSE,
+    };
+
+
+    vk::DynamicState dyn_states[]{
+        vk::DynamicState::eViewport,
+        vk::DynamicState::eScissor,
+    };
+
+    vk::PipelineDynamicStateCreateInfo dynamic_state{
+        .flags = {},
+        .dynamicStateCount = std::size(dyn_states),
+        .pDynamicStates = dyn_states,
+    };
+
+    return avk::create_graphics_pipeline(
+        avk::context::device()->createGraphicsPipeline(
+            {},
+            vk::GraphicsPipelineCreateInfo{
+                .stageCount = static_cast<uint32_t>(pipeline_stages.size()),
+                .pStages = pipeline_stages.data(),
+                .pVertexInputState = &vertex_input,
+                .pInputAssemblyState = &input_assembly,
+                .pTessellationState = nullptr,
+                .pViewportState = &viewport,
+                .pRasterizationState = &rasterization,
+                .pMultisampleState = &multisample,
+                .pDepthStencilState = &depth_stencil,
+                .pColorBlendState = &color_blend,
+                .pDynamicState = &dynamic_state,
+                .layout = layout,
+
+                .renderPass = pass,
+                .subpass = subpass,
+                .basePipelineHandle = {},
+                .basePipelineIndex = -1,
+                }).value);
+
+    // clang-format on
+}
+
+
 sandbox::gltf::vk_material_info sandbox::gltf::vk_material_info::from_gltf_material(const sandbox::gltf::material& material)
 {
     auto get_texture_cords_set = [](const gltf::material::texture_data& tex_data) {
@@ -153,6 +377,5 @@ sandbox::gltf::vk_material_info sandbox::gltf::vk_material_info::from_gltf_mater
         .emissive_factor = material.get_emissive_factor(),
         .alpha_mode = static_cast<int32_t>(material.get_alpha_mode()),
         .alpha_cutoff = material.get_alpha_cutoff(),
-        .double_sided = material.is_double_sided()
-    };
+        .double_sided = material.is_double_sided()};
 }

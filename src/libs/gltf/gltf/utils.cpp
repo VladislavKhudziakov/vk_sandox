@@ -85,6 +85,30 @@ sandbox::gltf::camera_type_value::operator sandbox::gltf::camera_type() const
 }
 
 
+sandbox::gltf::image_mime_type_value::image_mime_type_value(const char* value)
+{
+    if (strcmp(IMAGE_MIME_TYPE_JPEG, value) == 0) {
+        type = image_mime_type::jpeg;
+    } else if (strcmp(IMAGE_MIME_TYPE_PNG, value) == 0) {
+        type = image_mime_type::png;
+    } else {
+        throw std::runtime_error("Bad image mime type " + std::string(value));
+    }
+}
+
+
+sandbox::gltf::image_mime_type_value::image_mime_type_value(const std::string& value)
+    : image_mime_type_value(value.c_str())
+{
+}
+
+
+sandbox::gltf::image_mime_type_value::operator sandbox::gltf::image_mime_type() const
+{
+    return type;
+}
+
+
 std::string sandbox::gltf::to_string(sandbox::gltf::accessor_type accessor_type)
 {
     switch (accessor_type) {
@@ -144,7 +168,9 @@ std::string sandbox::gltf::to_string(sandbox::gltf::alpha_mode alpha_mode)
 }
 
 
-size_t sandbox::gltf::get_buffer_element_size(sandbox::gltf::accessor_type_value accessor_type, sandbox::gltf::component_type component_type)
+size_t sandbox::gltf::get_buffer_element_size(
+    sandbox::gltf::accessor_type accessor_type,
+    sandbox::gltf::component_type component_type)
 {
     switch (accessor_type) {
         case accessor_type::scalar:

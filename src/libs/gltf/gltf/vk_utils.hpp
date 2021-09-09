@@ -1,18 +1,46 @@
 #pragma once
 
 #include <gltf/gltf_base.hpp>
-#include <render/vk/vulkan_dependencies.hpp>
+#include <render/vk/raii.hpp>
 
 namespace sandbox::gltf
 {
-    vk::Format to_vk_format(accessor_type_value accessor_type, component_type component_type);
-    vk::IndexType to_vk_index_type(accessor_type_value accessor_type, component_type component_type);
+    enum class pipeline_primitive_topology {
+        triangles,
+        lines,
+        points,
+    };
+
+    enum class pipeline_blend_mode {
+        none
+    };
+
+    vk::Format to_vk_format(accessor_type accessor_type, component_type component_type);
+    vk::IndexType to_vk_index_type(accessor_type accessor_type, component_type component_type);
+    std::pair<vk::Filter, vk::SamplerMipmapMode> to_vk_sampler_filter(sampler_filter_type filter);
+    vk::SamplerAddressMode to_vk_sampler_wrap(sampler_wrap_type wrap);
+
+    bool need_mips(sampler_filter_type filter);
 
     void draw_primitive(
         const gltf::primitive& primitive,
         const vk::Buffer& vertex_buffer,
         const vk::Buffer& index_buffer,
         vk::CommandBuffer& command_buffer);
+
+    sandbox::hal::render::avk::graphics_pipeline create_pipeline_from_primitive(
+        const gltf::primitive& primitive,
+        const std::vector<std::pair<vk::ShaderModule, vk::ShaderStageFlagBits>>& stages,
+        vk::PipelineLayout layout,
+        vk::RenderPass pass,
+        uint32_t subpass,
+
+        pipeline_primitive_topology topology = pipeline_primitive_topology::triangles,
+        pipeline_blend_mode blend = pipeline_blend_mode::none,
+        bool backfaces = false,
+        bool zwrite = true,
+        bool ztest = true,
+        bool color_write = true);
 
 
     struct vk_material_info

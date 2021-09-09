@@ -17,6 +17,25 @@ namespace sandbox::gltf
     };
 
 
+    enum class sampler_filter_type
+    {
+        nearest = 9728,
+        linear = 9729,
+        near_mipmap_nearest = 9984,
+        linear_mipmap_nearest = 9985,
+        near_mipmap_linear = 9986,
+        linear_mipmap_linear = 9987
+    };
+
+
+    enum class sampler_wrap_type
+    {
+        repeat = 10496,
+        clamp_to_edge = 33071,
+        mirrored_repeat = 33648
+    };
+
+
     enum class alpha_mode
     {
         opaque,
@@ -40,6 +59,14 @@ namespace sandbox::gltf
     {
         perspective,
         orthographic
+    };
+
+
+    enum class image_mime_type
+    {
+        jpeg,
+        png,
+        undefined
     };
 
     struct accessor_type_value
@@ -91,8 +118,24 @@ namespace sandbox::gltf
         camera_type type{camera_type::perspective};
     };
 
+
+    struct image_mime_type_value
+    {
+        constexpr static auto IMAGE_MIME_TYPE_JPEG = "image/jpeg";
+        constexpr static auto IMAGE_MIME_TYPE_PNG = "image/png";
+
+        image_mime_type_value() = default;
+        image_mime_type_value(const char* value);
+        image_mime_type_value(const std::string& value);
+
+        operator sandbox::gltf::image_mime_type() const;
+
+        image_mime_type type{image_mime_type::undefined};
+    };
+
+
     size_t get_component_type_size(component_type component_type);
-    size_t get_buffer_element_size(accessor_type_value accessor_type, component_type component_type);
+    size_t get_buffer_element_size(accessor_type accessor_type, component_type component_type);
 
     std::string to_string(accessor_type);
     std::string to_string(component_type);

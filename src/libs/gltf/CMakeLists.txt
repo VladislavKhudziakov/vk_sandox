@@ -11,4 +11,5 @@ make_bin(
         glm
         nlohmann_json
         spdlog
+        stb
 )
