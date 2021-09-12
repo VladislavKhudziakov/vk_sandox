@@ -42,6 +42,17 @@ namespace sandbox::gltf
         bool ztest = true,
         bool color_write = true);
 
+    vk::Format stb_channels_count_to_vk_format(int32_t);
+
+    sandbox::hal::render::avk::descriptor_set_layout
+        create_material_textures_layout(const gltf::material& material);
+
+    void write_material_textures_descriptors(
+        const gltf::material& material,
+        vk::DescriptorSet dst_set,
+        const std::vector<std::unique_ptr<gltf::texture>>& textures,
+        const std::vector<std::unique_ptr<gltf::image>>& images);
+
 
     struct vk_material_info
     {

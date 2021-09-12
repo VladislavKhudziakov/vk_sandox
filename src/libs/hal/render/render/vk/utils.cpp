@@ -3,12 +3,13 @@
 #include <render/vk/errors_handling.hpp>
 
 #include <utils/scope_helpers.hpp>
+#include <utils/conditions_helpers.hpp>
 
 
 using namespace sandbox::hal::render;
 
 
-std::pair<avk::vma_image, avk::image_view> sandbox::hal::render::avk::create_attachment(
+std::pair<avk::vma_image, avk::image_view> sandbox::hal::render::avk::gen_attachment(
     uint32_t width,
     uint32_t height,
     vk::Format format,
@@ -81,7 +82,7 @@ std::pair<avk::vma_image, avk::image_view> sandbox::hal::render::avk::create_att
 }
 
 
-avk::vma_buffer avk::create_staging_buffer(
+avk::vma_buffer avk::gen_staging_buffer(
     uint32_t queue_family, size_t data_size, const std::function<void(uint8_t*)>& on_buffer_mapped)
 {
     auto buffer = avk::create_vma_buffer(
@@ -120,7 +121,7 @@ avk::vma_buffer avk::create_staging_buffer(
 }
 
 
-avk::framebuffer avk::create_framebuffer_from_attachments(
+avk::framebuffer avk::gen_framebuffer(
     uint32_t width, uint32_t height, const vk::RenderPass& pass, const vk::ImageView* attachments, uint32_t attachments_count)
 {
     return avk::create_framebuffer(
@@ -140,7 +141,7 @@ avk::framebuffer avk::create_framebuffer_from_attachments(
 
 
 std::tuple<avk::framebuffer, std::vector<avk::vma_image>, std::vector<avk::image_view>>
-avk::create_framebuffer_from_pass(
+avk::gen_framebuffer(
     uint32_t width,
     uint32_t height,
     uint32_t queue_family,
@@ -173,7 +174,7 @@ avk::create_framebuffer_from_pass(
             attachment_usage = attachments_usages[i];
         }
 
-        auto [image, view] = create_attachment(
+        auto [image, view] = gen_attachment(
             attachment_width,
             attachment_height,
             attachment.format,
@@ -188,9 +189,231 @@ avk::create_framebuffer_from_pass(
         image_views_native.emplace_back(native_view);
     }
 
-    auto framebuffer = create_framebuffer_from_attachments(width, height, pass, image_views_native.data(), image_views_native.size());
+    auto framebuffer = gen_framebuffer(width, height, pass, image_views_native.data(), image_views_native.size());
 
     return std::make_tuple(std::move(framebuffer), std::move(images), std::move(images_views));
+}
+
+
+void avk::copy_buffer_to_image(
+    vk::CommandBuffer command_buffer,
+    const vk::Buffer& staging_buffer,
+    const vk::Image& dst_image,
+    uint32_t image_width,
+    uint32_t image_height,
+    uint32_t image_level_count,
+    uint32_t image_layers_count,
+    size_t buffer_offset)
+{
+    // clang-format off
+    command_buffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eTransfer,
+        {},
+        {},
+        {},
+        {vk::ImageMemoryBarrier{
+            .srcAccessMask = {},
+            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::eTransferDstOptimal,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = dst_image,
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = image_level_count,
+                .baseArrayLayer = 0,
+                .layerCount = image_layers_count
+            },
+        }});
+
+    command_buffer.copyBufferToImage(
+        staging_buffer,
+        dst_image,
+        vk::ImageLayout::eTransferDstOptimal,
+        {vk::BufferImageCopy{
+            .bufferOffset = static_cast<VkDeviceSize>(buffer_offset),
+            .bufferRowLength = image_width,
+            .bufferImageHeight = image_height,
+
+            .imageSubresource = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .mipLevel = 0,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+
+            .imageOffset = {
+                0, 0, 0
+            },
+
+            .imageExtent = {
+                image_width, image_height, 1
+            },
+        }});
+
+    vk::PipelineStageFlags all_shaders_flags =
+        vk::PipelineStageFlagBits::eVertexShader |
+        vk::PipelineStageFlagBits::eGeometryShader |
+        vk::PipelineStageFlagBits::eTessellationControlShader |
+        vk::PipelineStageFlagBits::eTessellationEvaluationShader |
+        vk::PipelineStageFlagBits::eComputeShader |
+        vk::PipelineStageFlagBits::eFragmentShader;
+
+
+    command_buffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer,
+        all_shaders_flags,
+        {},
+        {},
+        {},
+        {vk::ImageMemoryBarrier{
+            .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+            .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = dst_image,
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = image_level_count,
+                .baseArrayLayer = 0,
+                .layerCount = image_layers_count
+                },
+            }});
+
+    // clang-format on
+}
+
+
+avk::descriptor_set_layout avk::gen_descriptor_set_layout(uint32_t count, vk::DescriptorType type)
+{
+    std::vector<vk::DescriptorSetLayoutBinding> bindings{};
+    bindings.reserve(count);
+
+    for (uint32_t i = 0; i < count; ++i) {
+        bindings.emplace_back(vk::DescriptorSetLayoutBinding{
+            .binding = i,
+            .descriptorType = type,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eAll,
+            .pImmutableSamplers = nullptr
+        });
+    }
+
+    return avk::create_descriptor_set_layout(avk::context::device()->createDescriptorSetLayout(vk::DescriptorSetLayoutCreateInfo{
+        .bindingCount = static_cast<uint32_t>(bindings.size()),
+        .pBindings = bindings.data()
+    }));
+}
+
+
+std::pair<avk::descriptor_pool, avk::descriptor_set_list> avk::gen_descriptor_sets(
+    const std::vector<vk::DescriptorSetLayout>& layouts,
+    const std::vector<std::pair<uint32_t, vk::DescriptorType>>& layouts_data)
+{
+    std::vector<vk::DescriptorPoolSize> descriptor_pool_sizes{};
+    descriptor_pool_sizes.reserve(layouts_data.size());
+
+    auto descriptor_pool = avk::create_descriptor_pool(avk::context::device()->createDescriptorPool(
+        vk::DescriptorPoolCreateInfo{
+            .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+            .maxSets = static_cast<uint32_t>(layouts.size()),
+            .poolSizeCount = static_cast<uint32_t>(descriptor_pool_sizes.size()),
+            .pPoolSizes = descriptor_pool_sizes.data(),
+        }
+    ));
+
+    auto descriptor_sets = avk::allocate_descriptor_sets(vk::DescriptorSetAllocateInfo {
+        .descriptorPool = descriptor_pool,
+        .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+        .pSetLayouts = layouts.data()
+    });
+
+    return std::make_pair(std::move(descriptor_pool), std::move(descriptor_sets));
+}
+
+
+void avk::write_texture_descriptors(
+    vk::DescriptorSet dst_set,
+    const std::vector<vk::ImageView>& images_views,
+    const std::vector<vk::Sampler>& samplers)
+{
+    CHECK(images_views.size() == samplers.size());
+
+    std::vector<vk::DescriptorImageInfo> images_infos{};
+    images_infos.reserve(images_views.size());
+
+    for (int i = 0; i < images_views.size(); ++i) {
+        images_infos.emplace_back(vk::DescriptorImageInfo{
+            .sampler = samplers[i],
+            .imageView = images_views[i],
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+        });
+    }
+
+    // clang-format off
+    avk::context::device()->updateDescriptorSets({
+        vk::WriteDescriptorSet{
+            .dstSet = dst_set,
+            .dstBinding = 0,
+            .dstArrayElement = 0,
+            .descriptorCount = static_cast<uint32_t>(images_infos.size()),
+            .pImageInfo = images_infos.data(),
+            .pBufferInfo = nullptr,
+            .pTexelBufferView = nullptr
+        }}, {});
+    // clang-format on
+}
+
+
+void avk::write_buffer_descriptors(
+    vk::DescriptorSet dst_set,
+    const std::vector<vk::Buffer>& buffers,
+    const std::vector<std::pair<VkDeviceSize, VkDeviceSize>>& sizes)
+{
+    CHECK(buffers.size() == sizes.size());
+
+    std::vector<vk::DescriptorBufferInfo> buffers_infos{};
+
+    for (int i = 0; i < buffers.size(); ++i) {
+        buffers_infos.emplace_back(vk::DescriptorBufferInfo{
+            .buffer = buffers[i],
+            .offset = sizes[i].first,
+            .range = sizes[i].second
+        });
+    }
+
+    // clang-format off
+    avk::context::device()->updateDescriptorSets({
+        vk::WriteDescriptorSet{
+            .dstSet = dst_set,
+            .dstBinding = 0,
+            .dstArrayElement = 0,
+            .descriptorCount = static_cast<uint32_t>(buffers_infos.size()),
+            .pImageInfo = nullptr,
+            .pBufferInfo = buffers_infos.data(),
+            .pTexelBufferView = nullptr
+        }}, {});
+    // clang-format on
+}
+
+
+avk::pipeline_layout avk::gen_pipeline_layout(
+    const std::vector<vk::PushConstantRange>& push_constants,
+    const std::vector<vk::DescriptorSetLayout>& desc_set_layouts)
+{
+    return avk::create_pipeline_layout(avk::context::device()->createPipelineLayout(vk::PipelineLayoutCreateInfo{
+        .setLayoutCount = static_cast<uint32_t>(desc_set_layouts.size()),
+        .pSetLayouts = desc_set_layouts.data(),
+        .pushConstantRangeCount = static_cast<uint32_t>(push_constants.size()),
+        .pPushConstantRanges = push_constants.data()}));
+
+    return sandbox::hal::render::avk::pipeline_layout();
 }
 
 

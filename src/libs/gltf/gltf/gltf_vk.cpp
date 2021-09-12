@@ -61,16 +61,16 @@ namespace
 
         void init_texture_resources(
             gltf::gltf_vk::texture& gltf_texture,
-            gltf::image& gltf_image,
-            gltf::image& gltf_sampler,
+            gltf::gltf_vk::image& gltf_image,
+            gltf::sampler& gltf_sampler,
             vk::CommandBuffer& command_buffer,
             uint32_t queue_family)
         {
-            const vk::Format format = vk::Format::eR8Srgb;
+            const auto format = gltf::stb_channels_count_to_vk_format(gltf_image.get_components_count());
             const auto tex_fmt_info = avk::get_format_info(static_cast<VkFormat>(format));
             const auto staging_buffer_size = gltf_image.get_width() * gltf_image.get_height() * tex_fmt_info.size;
 
-            auto staging_buffer = avk::create_staging_buffer(
+            auto staging_buffer = avk::gen_staging_buffer(
                 queue_family,
                 staging_buffer_size,
                 [&gltf_image, staging_buffer_size](uint8_t* data) {
@@ -123,11 +123,43 @@ namespace
                         },
                     }));
 
+            auto max_lod = std::max(std::log2f(gltf_image.get_width()), std::log2f(gltf_image.get_height()));
+
             auto sampler = avk::create_sampler(avk::context::device()->createSampler(
-                vk::SamplerCreateInfo {
+                vk::SamplerCreateInfo{
+                    .magFilter = gltf::to_vk_sampler_filter(gltf_sampler.get_mag_filter()).first,
+                    .minFilter = gltf::to_vk_sampler_filter(gltf_sampler.get_min_filter()).first,
+                    .mipmapMode = gltf::to_vk_sampler_filter(gltf_sampler.get_min_filter()).second,
+
+                    .addressModeU = gltf::to_vk_sampler_wrap(gltf_sampler.get_wrap_s()),
+                    .addressModeV = gltf::to_vk_sampler_wrap(gltf_sampler.get_wrap_t()),
+                    .addressModeW = vk::SamplerAddressMode::eRepeat,
+                    .mipLodBias = 0,
+
+                    .anisotropyEnable = VK_FALSE,
+                    .compareEnable = VK_FALSE,
+
                     .minLod = 0,
-                    .maxLod = 1,
+                    .maxLod = max_lod,
+
+                    .borderColor = vk::BorderColor::eFloatOpaqueBlack,
+                    .unnormalizedCoordinates = VK_FALSE
                 }));
+
+            avk::copy_buffer_to_image(
+                command_buffer,
+                staging_buffer.as<vk::Buffer>(),
+                image.as<vk::Image>(),
+                gltf_image.get_width(),
+                gltf_image.get_height(),
+                1,
+                1);
+
+            gltf_image.set_vk_image(std::move(image));
+            gltf_image.set_vk_image_view(std::move(image_view));
+            gltf_texture.set_vk_sampler(std::move(sampler));
+
+            m_staging_buffers.emplace_back(std::move(staging_buffer));
         }
 
         std::unique_ptr<gltf::texture> create_texture(
@@ -135,6 +167,14 @@ namespace
             const nlohmann::json& texture_json) override
         {
             return std::make_unique<gltf::gltf_vk::texture>(gltf_json, texture_json);
+        }
+
+        std::unique_ptr<gltf::image> create_image(
+            const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
+            const nlohmann::json& gltf_json,
+            const nlohmann::json& texture_json) override
+        {
+            return std::make_unique<gltf::gltf_vk::image>(buffers, gltf_json, texture_json);
         }
 
         size_t get_vertex_buffer_size() const
@@ -223,7 +263,7 @@ namespace
             const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
             const std::vector<std::function<void(const std::vector<std::unique_ptr<gltf::buffer>>&, uint8_t*)>>& copy_callbacks)
         {
-            auto staging_buffer = avk::create_staging_buffer(
+            auto staging_buffer = avk::gen_staging_buffer(
                 queue_family,
                 buffer_size,
                 [&copy_callbacks, &buffers](uint8_t* dst) {
@@ -326,6 +366,21 @@ void gltf::gltf_vk::create_resources(vk::CommandBuffer& command_buffer, uint32_t
     m_index_buffer = assets_factory.create_index_buffer(
         m_model.get_buffers(), command_buffer, queue_family);
     m_index_buffer_size = assets_factory.get_index_buffer_size();
+
+    auto& images = m_model.get_images();
+    auto& samplers = m_model.get_samplers();
+
+    for (auto& texture : m_model.get_textures()) {
+        auto& image = images[texture->get_image()];
+        auto& sampler = samplers[texture->get_sampler()];
+
+        assets_factory.init_texture_resources(
+            static_cast<gltf_vk::texture&>(*texture),
+            static_cast<gltf_vk::image&>(*image),
+            *sampler,
+            command_buffer,
+            queue_family);
+    }
 }
 
 
@@ -432,19 +487,47 @@ gltf::gltf_vk::texture::texture(const nlohmann::json& gltf_json, const nlohmann:
 }
 
 
-void gltf::gltf_vk::texture::set_vk_image(hal::render::avk::vma_image image)
+void gltf::gltf_vk::texture::set_vk_sampler(hal::render::avk::sampler sampler)
+{
+    m_vk_sampler = std::move(sampler);
+}
+
+
+vk::Sampler gltf::gltf_vk::texture::get_vk_sampler() const
+{
+    return m_vk_sampler.as<vk::Sampler>();
+}
+
+
+gltf::gltf_vk::image::image(
+    const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
+    const nlohmann::json& gltf_json,
+    const nlohmann::json& image_json)
+    : gltf::image(buffers, gltf_json, image_json)
+{
+}
+
+
+void gltf::gltf_vk::image::set_vk_image(hal::render::avk::vma_image image)
 {
     m_vk_image = std::move(image);
 }
 
 
-void gltf::gltf_vk::texture::set_vk_image_view(hal::render::avk::image_view image_view)
+void gltf::gltf_vk::image::set_vk_image_view(hal::render::avk::image_view image_view)
 {
     m_vk_image_view = std::move(image_view);
 }
 
 
-void gltf::gltf_vk::texture::set_vk_sampler(hal::render::avk::sampler sampler)
+vk::Image gltf::gltf_vk::image::get_vk_image() const
 {
-    m_vk_sampler = std::move(sampler);
+    return m_vk_image.as<vk::Image>();
 }
+
+
+vk::ImageView gltf::gltf_vk::image::get_vk_image_view() const
+{
+    return m_vk_image_view.as<vk::ImageView>();
+}
+

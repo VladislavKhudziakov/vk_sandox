@@ -43,17 +43,29 @@ namespace sandbox::gltf
         {
         public:
             texture(const nlohmann::json& gltf_json, const nlohmann::json& texture_json);
-
-            void set_vk_image(hal::render::avk::vma_image);
-            void set_vk_image_view( hal::render::avk::image_view);
-            void set_vk_sampler( hal::render::avk::sampler);
-
-            vk::Format get_format() const;
+            void set_vk_sampler(hal::render::avk::sampler);
+            vk::Sampler get_vk_sampler() const;
 
         private:
-            hal::render::avk::vma_image m_vk_image{};
-            hal::render::avk::image_view m_vk_image_view{};
             hal::render::avk::sampler m_vk_sampler{};
+        };
+
+        class image : public gltf::image
+        {
+            public:
+                image(
+                    const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
+                    const nlohmann::json& gltf_json,
+                    const nlohmann::json& image_json);
+                void set_vk_image(hal::render::avk::vma_image);
+                void set_vk_image_view(hal::render::avk::image_view);
+
+                vk::Image get_vk_image() const;
+                vk::ImageView get_vk_image_view() const;
+
+            private:
+                hal::render::avk::vma_image m_vk_image{};
+                hal::render::avk::image_view m_vk_image_view{};
         };
 
 

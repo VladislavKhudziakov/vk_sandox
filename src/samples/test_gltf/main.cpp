@@ -30,7 +30,7 @@ public:
     {
         uint32_t queue_family = avk::context::queue_family(vk::QueueFlagBits::eGraphics);
 
-        auto [framebuffer, attachments, attachments_views] = avk::create_framebuffer_from_pass(
+        auto [framebuffer, attachments, attachments_views] = avk::gen_framebuffer(
             width, height, queue_family, m_pass.get_info(), m_pass.get_native_pass(), {}, {vk::ImageUsageFlagBits::eTransferSrc});
 
         m_framebuffer = std::move(framebuffer);
@@ -165,9 +165,23 @@ protected:
             }
 
             const auto& mesh = model.get_meshes()[node.mesh];
+            const auto& materials = model.get_materials();
 
             for (const auto& primitive : mesh->get_primitives()) {
                 const auto& primitive_impl = static_cast<const gltf::gltf_vk::primitive&>(*primitive);
+
+                avk::descriptor_set_layout textures_layout;
+
+                if (primitive_impl.get_material() < 0) {
+                    textures_layout = gltf::create_material_textures_layout(*materials.back());
+                } else {
+                    textures_layout = gltf::create_material_textures_layout(*materials[primitive->get_material()]);
+                }
+
+                auto [pool, sets] = avk::gen_descriptor_sets({textures_layout}, {{1u, vk::DescriptorType::eSampledImage}});
+                gltf::write_material_textures_descriptors(*materials[primitive->get_material()], sets->at(0), model.get_textures(), model.get_images());
+
+                auto pipeline_layout = avk::gen_pipeline_layout({}, {textures_layout});
 
                 m_model_primitive_pipelines[node.mesh].emplace_back(gltf::create_pipeline_from_primitive(
                     *primitive,

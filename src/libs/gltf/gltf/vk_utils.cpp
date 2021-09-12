@@ -1,8 +1,42 @@
 #include "vk_utils.hpp"
 #include "gltf_vk.hpp"
+
+#include <render/vk/utils.hpp>
 #include <utils/conditions_helpers.hpp>
 
+using namespace sandbox;
 using namespace sandbox::hal::render;
+
+
+namespace
+{
+    void for_each_material_texture(
+        const gltf::material& material,
+        const std::function<void(const gltf::material::texture_data& tex_data)> callback)
+    {
+
+        if (material.get_pbr_metallic_roughness().base_color_texture.index >= 0) {
+            callback(material.get_pbr_metallic_roughness().base_color_texture);
+        }
+
+        if (material.get_pbr_metallic_roughness().metallic_roughness_texture.index >= 0) {
+            callback(material.get_pbr_metallic_roughness().metallic_roughness_texture);
+        }
+
+        if (material.get_normal_texture().index >= 0) {
+            callback(material.get_normal_texture());
+        }
+
+        if (material.get_occlusion_texture().index >= 0) {
+            callback(material.get_occlusion_texture());
+        }
+
+        if (material.get_emissive_texture().index >= 0) {
+            callback(material.get_emissive_texture());
+        }
+    }
+}
+
 
 vk::IndexType sandbox::gltf::to_vk_index_type(
     sandbox::gltf::accessor_type accessor_type,
@@ -350,6 +384,56 @@ sandbox::hal::render::avk::graphics_pipeline sandbox::gltf::create_pipeline_from
                 }).value);
 
     // clang-format on
+}
+
+
+vk::Format sandbox::gltf::stb_channels_count_to_vk_format(int32_t count)
+{
+    switch (count) {
+        case 1:
+            return vk::Format::eR8Srgb;
+        case 2:
+            return vk::Format::eR8G8Srgb;
+        case 3:
+            return vk::Format::eR8G8B8Srgb;
+        case 4:
+            return vk::Format::eR8G8B8A8Srgb;
+        default:
+            throw std::runtime_error("Bad components count");
+    }
+}
+
+
+sandbox::hal::render::avk::descriptor_set_layout sandbox::gltf::create_material_textures_layout(
+    const sandbox::gltf::material& material)
+{
+    uint32_t textures_count = 0;
+
+    for_each_material_texture(material, [&textures_count](const auto& tex_data){
+        textures_count++;
+    });
+
+    return  avk::gen_descriptor_set_layout(textures_count, vk::DescriptorType::eSampledImage);
+}
+
+
+void sandbox::gltf::write_material_textures_descriptors(
+    const sandbox::gltf::material& material,
+    vk::DescriptorSet dst_set,
+    const std::vector<std::unique_ptr<gltf::texture>>& textures,
+    const std::vector<std::unique_ptr<gltf::image>>& images)
+{
+    std::vector<vk::ImageView> vk_images{};
+    std::vector<vk::Sampler> vk_samplers{};
+
+    for_each_material_texture(material, [&vk_images, &vk_samplers, &textures, &images](const gltf::material::texture_data& texture_data){
+        const auto& curr_tex = static_cast<const gltf_vk::texture&>(*textures[texture_data.index]);
+        const auto& curr_image = static_cast<const gltf_vk::image&>(*images[curr_tex.get_image()]);
+        vk_images.emplace_back(curr_image.get_vk_image_view());
+        vk_samplers.emplace_back(curr_tex.get_vk_sampler());
+    });
+
+    return avk::write_texture_descriptors(dst_set, vk_images, vk_samplers);
 }
 
 
