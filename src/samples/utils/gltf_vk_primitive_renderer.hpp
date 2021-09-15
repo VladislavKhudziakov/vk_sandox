@@ -4,16 +4,15 @@
 
 namespace sandbox::samples
 {
-    class gltf_vk_primitive_renderer : public gltf::gltf_vk::gltf_renderer
+    class gltf_vk_primitive_renderer
     {
     public:
-        ~gltf_vk_primitive_renderer() override = default;
+        virtual ~gltf_vk_primitive_renderer() = default;
 
-        void draw_scene(
+        virtual void draw_scene(
             const gltf::model& model,
-            uint32_t scene,
             const vk::Buffer& vertex_buffer,
-            const vk::Buffer& index_buffer) override;
+            const vk::Buffer& index_buffer);
 
     protected:
         virtual void create_pipelines(const gltf::model& model, uint32_t scene) = 0;

@@ -74,7 +74,10 @@ namespace sandbox::gltf
         size_t m_height{0};
         size_t m_components_count{0};
 
-        image_handler m_data{nullptr, [](const uint8_t*){}};
+        std::string m_uri{};
+        int32_t m_buffer_view = -1;
+
+        image_handler m_data{nullptr, [](const uint8_t*) {}};
 
         image_mime_type_value m_mime_type{};
     };
@@ -235,6 +238,8 @@ namespace sandbox::gltf
 
         bool is_double_sided() const;
 
+        uint32_t get_textures_count() const;
+
     private:
         pbr_metallic_roughness m_pbr_metallic_roughness_data{};
         texture_data m_normal_texture{};
@@ -246,6 +251,8 @@ namespace sandbox::gltf
         alpha_mode_value m_alpha_mode{};
 
         float m_alpha_cutoff{0.5};
+
+        size_t m_textures_count{0};
 
         bool m_double_sided{false};
     };
@@ -281,6 +288,8 @@ namespace sandbox::gltf
         {
             return std::get<DataType>(m_data);
         }
+
+        glm::mat4 calculate_projection(float screen_aspect) const;
 
     private:
         camera_type_value m_type{};
@@ -395,32 +404,4 @@ namespace sandbox::gltf
 
         std::unique_ptr<assets_factory> m_assets_factory{};
     };
-
-
-    struct accessor_data
-    {
-        constexpr static auto BOUND_MIN_VALUE = std::numeric_limits<float>::min();
-        constexpr static auto BOUND_MAX_VALUE = std::numeric_limits<float>::max();
-
-        uint32_t buffer{0};
-        uint64_t buffer_offset{0};
-
-        glm::vec3 min_bound{BOUND_MAX_VALUE, BOUND_MAX_VALUE, BOUND_MAX_VALUE};
-        glm::vec3 max_bound{BOUND_MIN_VALUE, BOUND_MIN_VALUE, BOUND_MIN_VALUE};
-
-        component_type component_type;
-        accessor_type accessor_type;
-
-        size_t count;
-    };
-
-
-    accessor_data extract_accessor_data_from_buffer(
-        const nlohmann::json& gltf,
-        const nlohmann::json& accessor);
-
-
-    std::pair<const void*, size_t> extract_buffer_view_data_from_buffer(
-        const nlohmann::json& buffer_view,
-        const std::vector<std::unique_ptr<buffer>>& buffers);
 } // namespace sandbox::gltf

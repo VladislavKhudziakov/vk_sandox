@@ -345,11 +345,12 @@ namespace sandbox::hal::render::avk
 
     inline descriptor_set_list allocate_descriptor_sets(const vk::DescriptorSetAllocateInfo& allocate_info, bool free = true)
     {
+        auto d_sets = avk::context::device()->allocateDescriptorSets(allocate_info);
         return {
-            avk::context::device()->allocateDescriptorSets(allocate_info),
-            [cmd_pool = allocate_info.descriptorPool, free](const std::vector<vk::DescriptorSet>& desc_sets) {
+            std::move(d_sets),
+            [desc_pool = allocate_info.descriptorPool, free](const std::vector<vk::DescriptorSet>& desc_sets) {
                 if (free) {
-                    avk::context::device()->freeDescriptorSets(cmd_pool, desc_sets);
+                    avk::context::device()->freeDescriptorSets(desc_pool, desc_sets);
                 }
             }};
     }

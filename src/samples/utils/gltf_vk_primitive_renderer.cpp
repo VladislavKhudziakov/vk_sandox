@@ -4,22 +4,21 @@
 
 void sandbox::samples::gltf_vk_primitive_renderer::draw_scene(
     const sandbox::gltf::model& model,
-    uint32_t scene,
     const vk::Buffer& vertex_buffer,
     const vk::Buffer& index_buffer)
 {
-    if (&model != m_last_model || scene != m_last_scene) {
-        create_pipelines(model, scene);
-        write_command_buffers(model, scene, vertex_buffer, index_buffer);
+    if (&model != m_last_model || model.get_current_scene() != m_last_scene) {
+        create_pipelines(model, model.get_current_scene());
+        write_command_buffers(model, model.get_current_scene(), vertex_buffer, index_buffer);
         m_need_rewrite_command_buffers = false;
     }
 
     if (m_need_rewrite_command_buffers) {
-        write_command_buffers(model, scene, vertex_buffer, index_buffer);
+        write_command_buffers(model, model.get_current_scene(), vertex_buffer, index_buffer);
     }
 
     m_last_model = &model;
-    m_last_scene = scene;
+    m_last_scene = model.get_current_scene();
     m_need_rewrite_command_buffers = false;
 }
 

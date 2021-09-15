@@ -52,32 +52,20 @@ namespace sandbox::gltf
 
         class image : public gltf::image
         {
-            public:
-                image(
-                    const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
-                    const nlohmann::json& gltf_json,
-                    const nlohmann::json& image_json);
-                void set_vk_image(hal::render::avk::vma_image);
-                void set_vk_image_view(hal::render::avk::image_view);
-
-                vk::Image get_vk_image() const;
-                vk::ImageView get_vk_image_view() const;
-
-            private:
-                hal::render::avk::vma_image m_vk_image{};
-                hal::render::avk::image_view m_vk_image_view{};
-        };
-
-
-        class gltf_renderer
-        {
         public:
-            virtual ~gltf_renderer() = default;
-            virtual void draw_scene(
-                const gltf::model& model,
-                uint32_t scene,
-                const vk::Buffer& vertex_buffer,
-                const vk::Buffer& index_buffer) = 0;
+            image(
+                const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
+                const nlohmann::json& gltf_json,
+                const nlohmann::json& image_json);
+            void set_vk_image(hal::render::avk::vma_image);
+            void set_vk_image_view(hal::render::avk::image_view);
+
+            vk::Image get_vk_image() const;
+            vk::ImageView get_vk_image_view() const;
+
+        private:
+            hal::render::avk::vma_image m_vk_image{};
+            hal::render::avk::image_view m_vk_image_view{};
         };
 
         static gltf_vk from_url(const std::string& url);
@@ -85,8 +73,7 @@ namespace sandbox::gltf
         void create_resources(vk::CommandBuffer& command_buffer, uint32_t queue_family);
         void clear_staging_resources();
 
-        void draw(gltf_renderer&);
-
+        const gltf::model& get_model() const;
         vk::Buffer get_vertex_buffer() const;
         vk::Buffer get_index_buffer() const;
 

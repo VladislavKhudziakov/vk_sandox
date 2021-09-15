@@ -66,85 +66,47 @@ namespace
             vk::CommandBuffer& command_buffer,
             uint32_t queue_family)
         {
-            const auto format = gltf::stb_channels_count_to_vk_format(gltf_image.get_components_count());
+            std::vector<uint8_t> image_pixels{};
+
+            vk::Format format = gltf::stb_channels_count_to_vk_format(gltf_image.get_components_count());
             const auto tex_fmt_info = avk::get_format_info(static_cast<VkFormat>(format));
-            const auto staging_buffer_size = gltf_image.get_width() * gltf_image.get_height() * tex_fmt_info.size;
+            size_t staging_buffer_size = gltf_image.get_width() * gltf_image.get_height() * tex_fmt_info.size;
+
+            if (gltf_image.get_components_count() == 3) {
+                image_pixels.reserve(gltf_image.get_width() * gltf_image.get_height() * 4);
+
+                for (uint64_t y = 0; y < gltf_image.get_height(); ++y) {
+                    for (uint64_t x = 0; x < gltf_image.get_width(); ++x) {
+                        image_pixels.push_back(gltf_image.get_pixels()[(y * gltf_image.get_width() + x) * 3 + 0]);
+                        image_pixels.push_back(gltf_image.get_pixels()[(y * gltf_image.get_width() + x) * 3 + 1]);
+                        image_pixels.push_back(gltf_image.get_pixels()[(y * gltf_image.get_width() + x) * 3 + 2]);
+                        image_pixels.push_back(255);
+                    }
+                }
+
+                staging_buffer_size = image_pixels.size();
+                format = vk::Format::eR8G8B8A8Srgb;
+            }
 
             auto staging_buffer = avk::gen_staging_buffer(
                 queue_family,
                 staging_buffer_size,
-                [&gltf_image, staging_buffer_size](uint8_t* data) {
-                    std::memcpy(data, gltf_image.get_pixels(), staging_buffer_size);
+                [&gltf_image, &image_pixels, staging_buffer_size](uint8_t* data) {
+                    std::memcpy(data, !image_pixels.empty() ? image_pixels.data() : gltf_image.get_pixels(), staging_buffer_size);
                 });
 
-            auto image = avk::create_vma_image(
-                vk::ImageCreateInfo{
-                    .flags = {},
-                    .imageType = vk::ImageType::e2D,
-                    .format = format,
-                    .extent = {
-                        .width = static_cast<uint32_t>(gltf_image.get_width()),
-                        .height = static_cast<uint32_t>(gltf_image.get_height()),
-                        .depth = 1,
-                    },
-                    .mipLevels = 1,
-                    .arrayLayers = 1,
-                    .samples = vk::SampleCountFlagBits::e1,
-                    .tiling = vk::ImageTiling::eOptimal,
-                    .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-                    .sharingMode = vk::SharingMode::eExclusive,
-                    .queueFamilyIndexCount = 1,
-                    .pQueueFamilyIndices = &queue_family,
-                    .initialLayout = vk::ImageLayout::eUndefined,
-                },
-                VmaAllocationCreateInfo{
-                    .usage = VMA_MEMORY_USAGE_GPU_ONLY,
-                });
-
-            auto image_view = avk::create_image_view(
-                avk::context::device()->createImageView(
-                    vk::ImageViewCreateInfo{
-                        .flags = {},
-                        .image = image.as<vk::Image>(),
-                        .viewType = vk::ImageViewType::e2D,
-                        .format = format,
-                        .components = {
-                            .r = vk::ComponentSwizzle::eR,
-                            .g = vk::ComponentSwizzle::eG,
-                            .b = vk::ComponentSwizzle::eB,
-                            .a = vk::ComponentSwizzle::eA,
-                        },
-                        .subresourceRange = {
-                            .aspectMask = vk::ImageAspectFlagBits::eColor,
-                            .baseMipLevel = 0,
-                            .levelCount = 1,
-                            .baseArrayLayer = 0,
-                            .layerCount = 1,
-                        },
-                    }));
+            auto [image, image_view] = avk::gen_texture(
+                queue_family, vk::ImageViewType::e2D, format, gltf_image.get_width(), gltf_image.get_height());
 
             auto max_lod = std::max(std::log2f(gltf_image.get_width()), std::log2f(gltf_image.get_height()));
-
-            auto sampler = avk::create_sampler(avk::context::device()->createSampler(
-                vk::SamplerCreateInfo{
-                    .magFilter = gltf::to_vk_sampler_filter(gltf_sampler.get_mag_filter()).first,
-                    .minFilter = gltf::to_vk_sampler_filter(gltf_sampler.get_min_filter()).first,
-                    .mipmapMode = gltf::to_vk_sampler_filter(gltf_sampler.get_min_filter()).second,
-
-                    .addressModeU = gltf::to_vk_sampler_wrap(gltf_sampler.get_wrap_s()),
-                    .addressModeV = gltf::to_vk_sampler_wrap(gltf_sampler.get_wrap_t()),
-                    .addressModeW = vk::SamplerAddressMode::eRepeat,
-                    .mipLodBias = 0,
-
-                    .anisotropyEnable = VK_FALSE,
-                    .compareEnable = VK_FALSE,
-
-                    .minLod = 0,
-                    .maxLod = max_lod,
-
-                    .borderColor = vk::BorderColor::eFloatOpaqueBlack,
-                    .unnormalizedCoordinates = VK_FALSE
-                }));
+            auto sampler = avk::gen_sampler(
+                gltf::to_vk_sampler_filter(gltf_sampler.get_mag_filter()).first,
+                gltf::to_vk_sampler_filter(gltf_sampler.get_min_filter()).first,
+                gltf::to_vk_sampler_filter(gltf_sampler.get_min_filter()).second,
+                gltf::to_vk_sampler_wrap(gltf_sampler.get_wrap_s()),
+                gltf::to_vk_sampler_wrap(gltf_sampler.get_wrap_t()),
+                vk::SamplerAddressMode::eRepeat,
+                max_lod);
 
             avk::copy_buffer_to_image(
                 command_buffer,
@@ -315,6 +277,7 @@ namespace
         std::vector<std::function<void(const std::vector<std::unique_ptr<gltf::buffer>>&, uint8_t*)>> m_copy_indices_data_callbacks{};
 
         std::vector<avk::vma_buffer> m_staging_buffers{};
+        std::vector<gltf::buffer*> m_gltf_buffers{};
     };
 } // namespace
 
@@ -390,14 +353,14 @@ void gltf::gltf_vk::clear_staging_resources()
 }
 
 
-void gltf::gltf_vk::draw(gltf_renderer& renderer)
-{
-    renderer.draw_scene(
-        m_model,
-        m_model.get_current_scene(),
-        m_vertex_buffer.as<vk::Buffer>(),
-        m_index_buffer.as<vk::Buffer>());
-}
+//void gltf::gltf_vk::draw(gltf_renderer& renderer)
+//{
+//    renderer.draw_scene(
+//        m_model,
+//        m_model.get_current_scene(),
+//        m_vertex_buffer.as<vk::Buffer>(),
+//        m_index_buffer.as<vk::Buffer>());
+//}
 
 
 vk::Buffer gltf::gltf_vk::get_vertex_buffer() const
@@ -409,6 +372,12 @@ vk::Buffer gltf::gltf_vk::get_vertex_buffer() const
 vk::Buffer gltf::gltf_vk::get_index_buffer() const
 {
     return m_index_buffer.as<vk::Buffer>();
+}
+
+
+const gltf::model& gltf::gltf_vk::get_model() const
+{
+    return m_model;
 }
 
 
@@ -480,7 +449,6 @@ uint64_t gltf::gltf_vk::primitive::get_index_buffer_offset() const
 }
 
 
-
 gltf::gltf_vk::texture::texture(const nlohmann::json& gltf_json, const nlohmann::json& texture_json)
     : gltf::texture(gltf_json, texture_json)
 {
@@ -530,4 +498,3 @@ vk::ImageView gltf::gltf_vk::image::get_vk_image_view() const
 {
     return m_vk_image_view.as<vk::ImageView>();
 }
-

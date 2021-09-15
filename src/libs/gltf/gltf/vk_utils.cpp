@@ -14,7 +14,6 @@ namespace
         const gltf::material& material,
         const std::function<void(const gltf::material::texture_data& tex_data)> callback)
     {
-
         if (material.get_pbr_metallic_roughness().base_color_texture.index >= 0) {
             callback(material.get_pbr_metallic_roughness().base_color_texture);
         }
@@ -35,7 +34,7 @@ namespace
             callback(material.get_emissive_texture());
         }
     }
-}
+} // namespace
 
 
 vk::IndexType sandbox::gltf::to_vk_index_type(
@@ -409,11 +408,11 @@ sandbox::hal::render::avk::descriptor_set_layout sandbox::gltf::create_material_
 {
     uint32_t textures_count = 0;
 
-    for_each_material_texture(material, [&textures_count](const auto& tex_data){
+    for_each_material_texture(material, [&textures_count](const auto& tex_data) {
         textures_count++;
     });
 
-    return  avk::gen_descriptor_set_layout(textures_count, vk::DescriptorType::eSampledImage);
+    return avk::gen_descriptor_set_layout(textures_count, vk::DescriptorType::eCombinedImageSampler);
 }
 
 
@@ -426,7 +425,7 @@ void sandbox::gltf::write_material_textures_descriptors(
     std::vector<vk::ImageView> vk_images{};
     std::vector<vk::Sampler> vk_samplers{};
 
-    for_each_material_texture(material, [&vk_images, &vk_samplers, &textures, &images](const gltf::material::texture_data& texture_data){
+    for_each_material_texture(material, [&vk_images, &vk_samplers, &textures, &images](const gltf::material::texture_data& texture_data) {
         const auto& curr_tex = static_cast<const gltf_vk::texture&>(*textures[texture_data.index]);
         const auto& curr_image = static_cast<const gltf_vk::image&>(*images[curr_tex.get_image()]);
         vk_images.emplace_back(curr_image.get_vk_image_view());

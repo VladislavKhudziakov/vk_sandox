@@ -209,9 +209,7 @@ void avk::copy_buffer_to_image(
     command_buffer.pipelineBarrier(
         vk::PipelineStageFlagBits::eTopOfPipe,
         vk::PipelineStageFlagBits::eTransfer,
-        {},
-        {},
-        {},
+        {}, {}, {},
         {vk::ImageMemoryBarrier{
             .srcAccessMask = {},
             .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
@@ -266,13 +264,11 @@ void avk::copy_buffer_to_image(
     command_buffer.pipelineBarrier(
         vk::PipelineStageFlagBits::eTransfer,
         all_shaders_flags,
-        {},
-        {},
-        {},
+        {}, {}, {},
         {vk::ImageMemoryBarrier{
             .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
             .dstAccessMask = vk::AccessFlagBits::eShaderRead,
-            .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .oldLayout = vk::ImageLayout::eTransferDstOptimal,
             .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -301,14 +297,12 @@ avk::descriptor_set_layout avk::gen_descriptor_set_layout(uint32_t count, vk::De
             .descriptorType = type,
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eAll,
-            .pImmutableSamplers = nullptr
-        });
+            .pImmutableSamplers = nullptr});
     }
 
     return avk::create_descriptor_set_layout(avk::context::device()->createDescriptorSetLayout(vk::DescriptorSetLayoutCreateInfo{
         .bindingCount = static_cast<uint32_t>(bindings.size()),
-        .pBindings = bindings.data()
-    }));
+        .pBindings = bindings.data()}));
 }
 
 
@@ -316,8 +310,17 @@ std::pair<avk::descriptor_pool, avk::descriptor_set_list> avk::gen_descriptor_se
     const std::vector<vk::DescriptorSetLayout>& layouts,
     const std::vector<std::pair<uint32_t, vk::DescriptorType>>& layouts_data)
 {
+    CHECK(layouts.size() == layouts_data.size());
+
     std::vector<vk::DescriptorPoolSize> descriptor_pool_sizes{};
     descriptor_pool_sizes.reserve(layouts_data.size());
+
+    for (const auto [desc_count, desc_type] : layouts_data) {
+        descriptor_pool_sizes.emplace_back(vk::DescriptorPoolSize{
+            .type = desc_type,
+            .descriptorCount = desc_count,
+        });
+    }
 
     auto descriptor_pool = avk::create_descriptor_pool(avk::context::device()->createDescriptorPool(
         vk::DescriptorPoolCreateInfo{
@@ -325,14 +328,12 @@ std::pair<avk::descriptor_pool, avk::descriptor_set_list> avk::gen_descriptor_se
             .maxSets = static_cast<uint32_t>(layouts.size()),
             .poolSizeCount = static_cast<uint32_t>(descriptor_pool_sizes.size()),
             .pPoolSizes = descriptor_pool_sizes.data(),
-        }
-    ));
+        }));
 
-    auto descriptor_sets = avk::allocate_descriptor_sets(vk::DescriptorSetAllocateInfo {
+    auto descriptor_sets = avk::allocate_descriptor_sets(vk::DescriptorSetAllocateInfo{
         .descriptorPool = descriptor_pool,
         .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-        .pSetLayouts = layouts.data()
-    });
+        .pSetLayouts = layouts.data()});
 
     return std::make_pair(std::move(descriptor_pool), std::move(descriptor_sets));
 }
@@ -343,6 +344,9 @@ void avk::write_texture_descriptors(
     const std::vector<vk::ImageView>& images_views,
     const std::vector<vk::Sampler>& samplers)
 {
+    if (images_views.empty()) {
+        return;
+    }
     CHECK(images_views.size() == samplers.size());
 
     std::vector<vk::DescriptorImageInfo> images_infos{};
@@ -352,8 +356,7 @@ void avk::write_texture_descriptors(
         images_infos.emplace_back(vk::DescriptorImageInfo{
             .sampler = samplers[i],
             .imageView = images_views[i],
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-        });
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal});
     }
 
     // clang-format off
@@ -363,10 +366,12 @@ void avk::write_texture_descriptors(
             .dstBinding = 0,
             .dstArrayElement = 0,
             .descriptorCount = static_cast<uint32_t>(images_infos.size()),
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
             .pImageInfo = images_infos.data(),
             .pBufferInfo = nullptr,
             .pTexelBufferView = nullptr
-        }}, {});
+        }},
+        {});
     // clang-format on
 }
 
@@ -384,8 +389,7 @@ void avk::write_buffer_descriptors(
         buffers_infos.emplace_back(vk::DescriptorBufferInfo{
             .buffer = buffers[i],
             .offset = sizes[i].first,
-            .range = sizes[i].second
-        });
+            .range = sizes[i].second});
     }
 
     // clang-format off
@@ -395,6 +399,7 @@ void avk::write_buffer_descriptors(
             .dstBinding = 0,
             .dstArrayElement = 0,
             .descriptorCount = static_cast<uint32_t>(buffers_infos.size()),
+            .descriptorType = vk::DescriptorType::eUniformBuffer,
             .pImageInfo = nullptr,
             .pBufferInfo = buffers_infos.data(),
             .pTexelBufferView = nullptr
@@ -412,8 +417,142 @@ avk::pipeline_layout avk::gen_pipeline_layout(
         .pSetLayouts = desc_set_layouts.data(),
         .pushConstantRangeCount = static_cast<uint32_t>(push_constants.size()),
         .pPushConstantRanges = push_constants.data()}));
+}
 
-    return sandbox::hal::render::avk::pipeline_layout();
+
+std::pair<avk::vma_image, avk::image_view> avk::gen_texture(
+    uint32_t queue_family,
+    vk::ImageViewType type,
+    vk::Format format,
+    uint32_t width,
+    uint32_t height,
+    uint32_t depth,
+    uint32_t levels,
+    uint32_t layers)
+{
+    CHECK_MSG(width > 0, "width must be greater 0.");
+    CHECK_MSG(height > 0, "height must be greater 0.");
+    CHECK_MSG(depth > 0, "depth must be greater 0.");
+    CHECK_MSG(levels > 0, "levels must be greater 0.");
+    CHECK_MSG(layers > 0, "layers must be greater 0.");
+
+    // clang-format off
+    bool is_depth =
+        format == vk::Format::eD24UnormS8Uint ||
+        format == vk::Format::eD16Unorm ||
+        format == vk::Format::eD16UnormS8Uint ||
+        format == vk::Format::eD32Sfloat ||
+        format == vk::Format::eD32SfloatS8Uint;
+    // clang-format on
+
+    vk::ImageType img_type{};
+
+    vk::ImageCreateFlags image_create_flags{};
+
+    switch (type) {
+        case vk::ImageViewType::e1DArray:
+            [[fallthrough]];
+        case vk::ImageViewType::e1D:
+            img_type = vk::ImageType::e1D;
+            break;
+        case vk::ImageViewType::eCube:
+            image_create_flags |= vk::ImageCreateFlagBits::eCubeCompatible;
+            [[fallthrough]];
+        case vk::ImageViewType::eCubeArray:
+            CHECK_MSG(layers % 6 == 0, "multiple 6 layers count in cubemaps required.");
+            image_create_flags |= vk::ImageCreateFlagBits::e2DArrayCompatible;
+            img_type = vk::ImageType::e2D;
+            break;
+        case vk::ImageViewType::e2DArray:
+            image_create_flags = vk::ImageCreateFlagBits::e2DArrayCompatible;
+            [[fallthrough]];
+        case vk::ImageViewType::e2D:
+            img_type = vk::ImageType::e2D;
+            break;
+        case vk::ImageViewType::e3D:
+            img_type = vk::ImageType::e3D;
+            break;
+    }
+
+    auto image = avk::create_vma_image(
+        vk::ImageCreateInfo{
+            .flags = image_create_flags,
+            .imageType = img_type,
+            .format = format,
+            .extent = {
+                .width = width,
+                .height = height,
+                .depth = depth,
+            },
+            .mipLevels = levels,
+            .arrayLayers = layers,
+            .samples = vk::SampleCountFlagBits::e1,
+            .tiling = vk::ImageTiling::eOptimal,
+            .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+            .sharingMode = vk::SharingMode::eExclusive,
+            .queueFamilyIndexCount = 1,
+            .pQueueFamilyIndices = &queue_family,
+            .initialLayout = vk::ImageLayout::eUndefined,
+        },
+        VmaAllocationCreateInfo{
+            .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+        });
+
+    vk::ImageViewCreateFlags flags{};
+
+    auto image_view = avk::create_image_view(
+        avk::context::device()->createImageView(
+            vk::ImageViewCreateInfo{
+                .flags = {},
+                .image = image.as<vk::Image>(),
+                .viewType = type,
+                .format = format,
+                .components = {
+                    .r = vk::ComponentSwizzle::eR,
+                    .g = vk::ComponentSwizzle::eG,
+                    .b = vk::ComponentSwizzle::eB,
+                    .a = vk::ComponentSwizzle::eA,
+                },
+                .subresourceRange = {
+                    .aspectMask = is_depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor,
+                    .baseMipLevel = 0,
+                    .levelCount = levels,
+                    .baseArrayLayer = 0,
+                    .layerCount = layers,
+                },
+            }));
+
+    return std::make_pair(std::move(image), std::move(image_view));
+}
+avk::sampler avk::gen_sampler(
+    vk::Filter min_filter,
+    vk::Filter mag_filter,
+    vk::SamplerMipmapMode mip_filter,
+    vk::SamplerAddressMode addr_mode_u,
+    vk::SamplerAddressMode addr_mode_v,
+    vk::SamplerAddressMode addr_mode_w,
+    float max_lod,
+    bool anisotropy)
+{
+    return avk::create_sampler(avk::context::device()->createSampler(
+        vk::SamplerCreateInfo{
+            .magFilter = min_filter,
+            .minFilter = mag_filter,
+            .mipmapMode = mip_filter,
+
+            .addressModeU = addr_mode_u,
+            .addressModeV = addr_mode_v,
+            .addressModeW = addr_mode_w,
+            .mipLodBias = 0,
+
+            .anisotropyEnable = VK_FALSE,
+            .compareEnable = VK_FALSE,
+
+            .minLod = 0,
+            .maxLod = max_lod,
+
+            .borderColor = vk::BorderColor::eFloatOpaqueBlack,
+            .unnormalizedCoordinates = VK_FALSE}));
 }
 
 

@@ -5,13 +5,15 @@
 
 namespace sandbox::gltf
 {
-    enum class pipeline_primitive_topology {
+    enum class pipeline_primitive_topology
+    {
         triangles,
         lines,
         points,
     };
 
-    enum class pipeline_blend_mode {
+    enum class pipeline_blend_mode
+    {
         none
     };
 
@@ -45,7 +47,7 @@ namespace sandbox::gltf
     vk::Format stb_channels_count_to_vk_format(int32_t);
 
     sandbox::hal::render::avk::descriptor_set_layout
-        create_material_textures_layout(const gltf::material& material);
+    create_material_textures_layout(const gltf::material& material);
 
     void write_material_textures_descriptors(
         const gltf::material& material,

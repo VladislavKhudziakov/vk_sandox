@@ -145,20 +145,6 @@ protected:
             create_shader(m_fragment_shader, "./resources/test.frag.spv");
         }
 
-        vk::PushConstantRange push_constant_range{
-            .stageFlags = vk::ShaderStageFlagBits::eVertex,
-            .offset = 0,
-            .size = sizeof(glm::mat4)};
-
-        if (!m_pipeline_layout) {
-            m_pipeline_layout = avk::create_pipeline_layout(avk::context::device()->createPipelineLayout(vk::PipelineLayoutCreateInfo{
-                .setLayoutCount = 0,
-                .pushConstantRangeCount = 1,
-                .pPushConstantRanges = &push_constant_range}));
-        }
-
-        m_model_primitive_pipelines.clear();
-
         for_each_scene_node(model, [this, &model](const gltf::node& node) {
             if (node.mesh < 0) {
                 return;
@@ -170,28 +156,49 @@ protected:
             for (const auto& primitive : mesh->get_primitives()) {
                 const auto& primitive_impl = static_cast<const gltf::gltf_vk::primitive&>(*primitive);
 
-                avk::descriptor_set_layout textures_layout;
+                pipeline_data curr_pipeline_data{};
+                gltf::material* curr_material{};
 
                 if (primitive_impl.get_material() < 0) {
-                    textures_layout = gltf::create_material_textures_layout(*materials.back());
+                    curr_material = materials.back().get();
+                    curr_pipeline_data.descriptor_layouts.emplace_back(gltf::create_material_textures_layout(*materials.back()));
                 } else {
-                    textures_layout = gltf::create_material_textures_layout(*materials[primitive->get_material()]);
+                    curr_material = materials[primitive->get_material()].get();
+                    curr_pipeline_data.descriptor_layouts.emplace_back(gltf::create_material_textures_layout(*materials[primitive->get_material()]));
                 }
 
-                auto [pool, sets] = avk::gen_descriptor_sets({textures_layout}, {{1u, vk::DescriptorType::eSampledImage}});
-                gltf::write_material_textures_descriptors(*materials[primitive->get_material()], sets->at(0), model.get_textures(), model.get_images());
+                auto descriptor_set_layouts = avk::to_elements_list<vk::DescriptorSetLayout>(
+                    curr_pipeline_data.descriptor_layouts.begin(), curr_pipeline_data.descriptor_layouts.end());
 
-                auto pipeline_layout = avk::gen_pipeline_layout({}, {textures_layout});
+                auto [pool, sets] = avk::gen_descriptor_sets(
+                    descriptor_set_layouts,
+                    {{curr_material->get_textures_count(), vk::DescriptorType::eCombinedImageSampler}});
 
-                m_model_primitive_pipelines[node.mesh].emplace_back(gltf::create_pipeline_from_primitive(
+                curr_pipeline_data.pool = std::move(pool);
+                curr_pipeline_data.descriptors = std::move(sets);
+
+                gltf::write_material_textures_descriptors(
+                    *materials[primitive->get_material()],
+                    curr_pipeline_data.descriptors->at(0),
+                    model.get_textures(),
+                    model.get_images());
+
+                curr_pipeline_data.layout = avk::gen_pipeline_layout(
+                    {vk::PushConstantRange{
+                        .stageFlags = vk::ShaderStageFlagBits::eVertex,
+                        .offset = 0,
+                        .size = sizeof(glm::mat4)}},
+                    descriptor_set_layouts);
+
+                curr_pipeline_data.pipeline = gltf::create_pipeline_from_primitive(
                     *primitive,
-                    {
-                        {m_vertex_shader, vk::ShaderStageFlagBits::eVertex},
-                        {m_fragment_shader, vk::ShaderStageFlagBits::eFragment}
-                    },
-                    m_pipeline_layout,
+                    {{m_vertex_shader, vk::ShaderStageFlagBits::eVertex},
+                     {m_fragment_shader, vk::ShaderStageFlagBits::eFragment}},
+                    curr_pipeline_data.layout,
                     m_pass.get_native_pass(),
-                    0));
+                    0);
+
+                m_models_primitives_pipelines[node.mesh].emplace_back(std::move(curr_pipeline_data));
             }
         });
     }
@@ -217,7 +224,6 @@ protected:
         }
 
         auto& curr_camera = *model.get_cameras().back();
-        auto& camera_data = curr_camera.get_data<gltf::camera::perspective>();
 
         struct instance_transform_data
         {
@@ -230,11 +236,7 @@ protected:
         std::unordered_map<int32_t, instance_transform_data> models_transforms;
 
         auto view_matrix = glm::lookAt(glm::vec3{3, 3, 3}, glm::vec3{0, 0, 0}, glm::vec3{0, 1, 0});
-
-        auto proj_matrix = glm::infinitePerspective(
-            camera_data.yfov,
-            camera_data.aspect_ratio == 0.0f ? float(m_framebuffer_width) / float(m_framebuffer_height) : camera_data.aspect_ratio,
-            0.01f);
+        auto proj_matrix = curr_camera.calculate_projection(float(m_framebuffer_width) / float(m_framebuffer_height));
 
         for_each_scene_node(
             model,
@@ -320,18 +322,28 @@ protected:
 
             auto& mesh = model.get_meshes()[node.mesh];
 
-            command_buffer.pushConstants(
-                m_pipeline_layout,
-                vk::ShaderStageFlagBits::eVertex,
-                0,
-                sizeof(glm::mat4),
-                glm::value_ptr(models_transforms[node.mesh].mvp));
-
-            auto curr_pipeline = m_model_primitive_pipelines[node.mesh].begin();
+            auto curr_pipeline = m_models_primitives_pipelines[node.mesh].begin();
 
             for (const auto& primitive : mesh->get_primitives()) {
-                command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *curr_pipeline++);
+                command_buffer.pushConstants(
+                    curr_pipeline->layout,
+                    vk::ShaderStageFlagBits::eVertex,
+                    0,
+                    sizeof(glm::mat4),
+                    glm::value_ptr(models_transforms[node.mesh].mvp));
+
+                command_buffer.bindDescriptorSets(
+                    vk::PipelineBindPoint::eGraphics,
+                    curr_pipeline->layout,
+                    0,
+                    curr_pipeline->descriptors->size(),
+                    curr_pipeline->descriptors->data(),
+                    0,
+                    nullptr);
+
+                command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, curr_pipeline->pipeline);
                 gltf::draw_primitive(*primitive, vertex_buffer, index_buffer, command_buffer);
+                curr_pipeline++;
             }
         });
 
@@ -340,6 +352,16 @@ protected:
     }
 
 private:
+    struct pipeline_data
+    {
+        avk::pipeline_layout layout{};
+        avk::descriptor_pool pool{};
+        std::vector<avk::descriptor_set_layout> descriptor_layouts{};
+        avk::descriptor_set_list descriptors{};
+
+        avk::graphics_pipeline pipeline{};
+    };
+
     avk::render_pass_wrapper m_pass{};
 
     avk::framebuffer m_framebuffer{};
@@ -354,9 +376,8 @@ private:
 
     avk::shader_module m_vertex_shader{};
     avk::shader_module m_fragment_shader{};
-    avk::pipeline_layout m_pipeline_layout{};
 
-    std::unordered_map<int32_t, std::vector<avk::graphics_pipeline>> m_model_primitive_pipelines{};
+    std::unordered_map<int32_t, std::vector<pipeline_data>> m_models_primitives_pipelines{};
 };
 
 
@@ -441,7 +462,7 @@ public:
             m_semaphore = avk::create_semaphore(avk::context::device()->createSemaphore({}));
         }
 
-        m_model.draw(m_renderer);
+        m_renderer.draw_scene(m_model.get_model(), m_model.get_vertex_buffer(), m_model.get_index_buffer());
 
         vk::Queue queue = avk::context::queue(vk::QueueFlagBits::eGraphics, 0);
         queue.submit(vk::SubmitInfo{
@@ -462,9 +483,9 @@ private:
 
 int main(int argv, const char** argc)
 {
-    RDOC_INIT_SCOPE();
+    //    RDOC_INIT_SCOPE();
 
-    gltf::gltf_vk gltf = gltf::gltf_vk::from_url("./resources/Box.glb");
+    gltf::gltf_vk gltf = gltf::gltf_vk::from_url("./resources/BoxTexturedNonPowerOfTwo.glb");
 
     auto dummy_listener = std::make_unique<gltf_test_listener>(std::move(gltf));
 

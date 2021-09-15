@@ -2,6 +2,8 @@
 
 #include "utils.hpp"
 
+#include <glm/gtc/type_ptr.hpp>
+
 #include <string>
 #include <stdexcept>
 #include <cstring>
@@ -210,4 +212,65 @@ size_t sandbox::gltf::get_component_type_size(sandbox::gltf::component_type comp
         default:
             throw std::runtime_error("Bad component type " + to_string(component_type));
     }
+}
+
+
+void sandbox::gltf::do_if_found(
+    const nlohmann::json& where,
+    const std::string& what,
+    const std::function<void(const nlohmann::json&)>& callback)
+{
+    if (where.find(what) != where.end()) {
+        callback(where[what]);
+    }
+};
+
+
+sandbox::gltf::accessor_data sandbox::gltf::extract_accessor_data_from_buffer(
+    const nlohmann::json& gltf,
+    const nlohmann::json& accessor)
+{
+    const auto& buffer_view = gltf["bufferViews"][accessor["bufferView"].get<uint32_t>()];
+    const auto [buffer, buffer_view_offset, buffer_view_length] = extract_buffer_view_data(buffer_view);
+
+    gltf::accessor_data result{
+        .buffer = buffer,
+        .buffer_offset = buffer_view_offset + accessor["byteOffset"].get<uint64_t>(),
+        .component_type = static_cast<gltf::component_type>(accessor["componentType"].get<uint32_t>()),
+        .accessor_type = accessor_type_value(accessor["type"].get<std::string>()),
+        .count = accessor["count"].get<size_t>(),
+    };
+
+    do_if_found(accessor, "min", [&result](const nlohmann::json& min) {
+        const auto data = min.get<std::vector<float>>();
+
+        if (data.size() != 3) {
+            return;
+        }
+
+        std::memcpy(glm::value_ptr(result.min_bound), data.data(), sizeof(result.min_bound));
+    });
+
+    do_if_found(accessor, "max", [&result](const nlohmann::json& max) {
+        const auto data = max.get<std::vector<float>>();
+
+        if (data.size() != 3) {
+            return;
+        }
+
+        std::memcpy(glm::value_ptr(result.max_bound), data.data(), sizeof(result.min_bound));
+    });
+
+    return result;
+}
+
+
+std::tuple<uint32_t, uint64_t, size_t> sandbox::gltf::extract_buffer_view_data(
+    const nlohmann::json& buffer_view)
+{
+    const auto offset = buffer_view["byteOffset"].get<uint64_t>();
+    const auto data_length = buffer_view["byteLength"].get<uint64_t>();
+    const auto buffer = buffer_view["buffer"].get<uint32_t>();
+
+    return {buffer, offset, data_length};
 }

@@ -316,6 +316,15 @@ namespace
 
         void main_loop() override
         {
+            std::call_once(m_first_ts_flag, [this]() {
+                m_last_ts = std::chrono::high_resolution_clock::now();
+            });
+
+            auto m_curr_ts = std::chrono::high_resolution_clock::now();
+            auto dt = std::chrono::duration_cast<std::chrono::microseconds>(m_curr_ts - m_last_ts);
+
+            m_last_ts = m_curr_ts;
+
             if (!m_command_pool) {
                 m_command_pool = avk::create_command_pool(avk::context::device()->createCommandPool(vk::CommandPoolCreateInfo{
                     .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -326,8 +335,8 @@ namespace
             glfwPollEvents();
 
             auto* update_listener_impl = static_cast<vk_main_loop_update_listener*>(m_update_listener.get());
-            // TODO: add TS calc
-            update_listener_impl->update(0);
+
+            update_listener_impl->update(dt.count());
 
             const vk::Image src_image = update_listener_impl->get_present_image();
 
@@ -555,6 +564,9 @@ namespace
 
         std::vector<vk::PipelineStageFlags> m_wait_stages{};
         std::vector<avk::semaphore> m_submit_semaphores{};
+
+        std::once_flag m_first_ts_flag;
+        std::chrono::high_resolution_clock::time_point m_last_ts{};
     };
 } // namespace
 
