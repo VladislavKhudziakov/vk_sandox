@@ -1,6 +1,6 @@
 #pragma once
 
-#include <gltf/gltf_base.hpp>
+#include <gltf/gltf_vk.hpp>
 #include <render/vk/raii.hpp>
 
 namespace sandbox::gltf
@@ -25,13 +25,13 @@ namespace sandbox::gltf
     bool need_mips(sampler_filter_type filter);
 
     void draw_primitive(
-        const gltf::primitive& primitive,
+        const gltf::vk_primitive& primitive,
         const vk::Buffer& vertex_buffer,
         const vk::Buffer& index_buffer,
         vk::CommandBuffer& command_buffer);
 
     sandbox::hal::render::avk::graphics_pipeline create_pipeline_from_primitive(
-        const gltf::primitive& primitive,
+        const gltf::vk_primitive& primitive,
         const std::vector<std::pair<vk::ShaderModule, vk::ShaderStageFlagBits>>& stages,
         vk::PipelineLayout layout,
         vk::RenderPass pass,
@@ -52,8 +52,7 @@ namespace sandbox::gltf
     void write_material_textures_descriptors(
         const gltf::material& material,
         vk::DescriptorSet dst_set,
-        const std::vector<std::unique_ptr<gltf::texture>>& textures,
-        const std::vector<std::unique_ptr<gltf::image>>& images);
+        const gltf::vk_texture_atlas& tex_atlas);
 
 
     struct vk_material_info

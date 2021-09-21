@@ -37,7 +37,7 @@ namespace sandbox::samples
             const auto& scenes = model.get_scenes();
             const auto& all_nodes = model.get_nodes();
 
-            const auto& scene_nodes = scenes[model.get_current_scene()]->get_nodes();
+            const auto& scene_nodes = scenes[model.get_current_scene()].get_nodes();
 
             for_each_child(
                 scene_nodes,
@@ -50,24 +50,24 @@ namespace sandbox::samples
         template<typename Callable, typename... Args>
         void for_each_child(
             const std::vector<int32_t>& curr_nodes,
-            const std::vector<std::unique_ptr<gltf::node>>& all_nodes,
+            const std::vector<gltf::node>& all_nodes,
             const Callable& callback,
             Args&&... args)
         {
             for (int32_t node : curr_nodes) {
                 const auto& node_impl = all_nodes[node];
-                if constexpr (std::is_same_v<decltype(callback(*all_nodes[node], std::forward<Args>(args)...)), void>) {
-                    callback(*all_nodes[node], std::forward<Args>(args)...);
+                if constexpr (std::is_same_v<decltype(callback(all_nodes[node], std::forward<Args>(args)...)), void>) {
+                    callback(all_nodes[node], std::forward<Args>(args)...);
                     for_each_child(
-                        node_impl->children,
+                        node_impl.get_children(),
                         all_nodes,
                         callback);
                 } else {
                     for_each_child(
-                        node_impl->children,
+                        node_impl.get_children(),
                         all_nodes,
                         callback,
-                        callback(*all_nodes[node], std::forward<Args>(args)...));
+                        callback(all_nodes[node], std::forward<Args>(args)...));
                 }
             }
         }

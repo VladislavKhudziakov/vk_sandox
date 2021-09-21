@@ -1,5 +1,4 @@
 #include "vk_utils.hpp"
-#include "gltf_vk.hpp"
 
 #include <render/vk/utils.hpp>
 #include <utils/conditions_helpers.hpp>
@@ -139,13 +138,12 @@ vk::Format sandbox::gltf::to_vk_format(
 
 
 void sandbox::gltf::draw_primitive(
-    const sandbox::gltf::primitive& primitive,
+    const sandbox::gltf::vk_primitive& primitive,
     const vk::Buffer& vertex_buffer,
     const vk::Buffer& index_buffer,
     vk::CommandBuffer& command_buffer)
 {
-    const auto& primitive_impl = static_cast<const gltf::gltf_vk::primitive&>(primitive);
-    const vk::DeviceSize vertex_buffer_offset = primitive_impl.get_vertex_buffer_offset();
+    const vk::DeviceSize vertex_buffer_offset = primitive.vertex_buffer_offset;
 
     thread_local static std::vector<vk::Buffer> buffers{};
     thread_local static std::vector<vk::DeviceSize> offsets{};
@@ -153,16 +151,16 @@ void sandbox::gltf::draw_primitive(
     buffers.clear();
     offsets.clear();
 
-    buffers.insert(buffers.begin(), primitive_impl.get_vertex_bindings().size(), vertex_buffer);
-    offsets.insert(offsets.begin(), primitive_impl.get_vertex_bindings().size(), vertex_buffer_offset);
+    buffers.insert(buffers.begin(), primitive.bindings.size(), vertex_buffer);
+    offsets.insert(offsets.begin(), primitive.bindings.size(), vertex_buffer_offset);
 
     command_buffer.bindVertexBuffers(0, buffers.size(), buffers.data(), offsets.data());
 
-    if (primitive_impl.get_index_type() != vk::IndexType::eNoneKHR) {
-        command_buffer.bindIndexBuffer(index_buffer, primitive_impl.get_index_buffer_offset(), primitive_impl.get_index_type());
-        command_buffer.drawIndexed(primitive_impl.get_indices_data().indices_count, 1, 0, 0, 0);
+    if (primitive.index_type != vk::IndexType::eNoneKHR) {
+        command_buffer.bindIndexBuffer(index_buffer, primitive.index_buffer_offset, primitive.index_type);
+        command_buffer.drawIndexed(primitive.indices_count, 1, 0, 0, 0);
     } else {
-        command_buffer.draw(primitive_impl.get_vertices_count(), 1, 0, 0);
+        command_buffer.draw(primitive.vertices_count, 1, 0, 0);
     }
 }
 
@@ -215,7 +213,7 @@ bool sandbox::gltf::need_mips(sandbox::gltf::sampler_filter_type filter)
 
 
 sandbox::hal::render::avk::graphics_pipeline sandbox::gltf::create_pipeline_from_primitive(
-    const sandbox::gltf::primitive& primitive,
+    const sandbox::gltf::vk_primitive& primitive,
     const std::vector<std::pair<vk::ShaderModule, vk::ShaderStageFlagBits>>& stages,
     vk::PipelineLayout layout,
     vk::RenderPass pass,
@@ -230,10 +228,8 @@ sandbox::hal::render::avk::graphics_pipeline sandbox::gltf::create_pipeline_from
     // clang-format off
 
     auto vk_bool = [](bool flag) {
-    return flag ? VK_TRUE : VK_FALSE;
+        return flag ? VK_TRUE : VK_FALSE;
     };
-
-    const auto& primitive_impl = static_cast<const gltf::gltf_vk::primitive&>(primitive);
 
     std::vector<vk::PipelineShaderStageCreateInfo> pipeline_stages{};
     pipeline_stages.reserve(stages.size());
@@ -247,8 +243,8 @@ sandbox::hal::render::avk::graphics_pipeline sandbox::gltf::create_pipeline_from
         });
     }
 
-    const auto& vert_attrs = primitive_impl.get_vertex_attributes();
-    const auto& vert_bindings = primitive_impl.get_vertex_bindings();
+    const auto& vert_attrs = primitive.attributes;
+    const auto& vert_bindings = primitive.bindings;
 
     vk::PipelineVertexInputStateCreateInfo vertex_input{
         .flags = {},
@@ -419,17 +415,15 @@ sandbox::hal::render::avk::descriptor_set_layout sandbox::gltf::create_material_
 void sandbox::gltf::write_material_textures_descriptors(
     const sandbox::gltf::material& material,
     vk::DescriptorSet dst_set,
-    const std::vector<std::unique_ptr<gltf::texture>>& textures,
-    const std::vector<std::unique_ptr<gltf::image>>& images)
+    const gltf::vk_texture_atlas& tex_atlas)
 {
     std::vector<vk::ImageView> vk_images{};
     std::vector<vk::Sampler> vk_samplers{};
 
-    for_each_material_texture(material, [&vk_images, &vk_samplers, &textures, &images](const gltf::material::texture_data& texture_data) {
-        const auto& curr_tex = static_cast<const gltf_vk::texture&>(*textures[texture_data.index]);
-        const auto& curr_image = static_cast<const gltf_vk::image&>(*images[curr_tex.get_image()]);
-        vk_images.emplace_back(curr_image.get_vk_image_view());
-        vk_samplers.emplace_back(curr_tex.get_vk_sampler());
+    for_each_material_texture(material, [&vk_images, &vk_samplers, &tex_atlas](const gltf::material::texture_data& texture_data) {
+        const auto& curr_tex = tex_atlas.get_texture(texture_data.index);
+        vk_images.emplace_back(curr_tex.image_view);
+        vk_samplers.emplace_back(curr_tex.sampler);
     });
 
     return avk::write_texture_descriptors(dst_set, vk_images, vk_samplers);

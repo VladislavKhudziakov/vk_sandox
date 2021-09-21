@@ -1,5 +1,4 @@
 
-
 #include "gltf_vk_primitive_renderer.hpp"
 
 void sandbox::samples::gltf_vk_primitive_renderer::draw_scene(
@@ -31,16 +30,16 @@ void sandbox::samples::gltf_vk_primitive_renderer::for_each_primitive(
     const auto& all_materials = model.get_materials();
 
     for_each_scene_node(model, [&all_meshes, &all_materials, &callback](const gltf::node& node_impl) {
-        if (node_impl.mesh < 0) {
+        if (node_impl.get_mesh() < 0) {
             return;
         }
 
-        const auto& mesh_impl = all_meshes[node_impl.mesh];
+        const auto& mesh_impl = all_meshes[node_impl.get_mesh()];
 
-        for (const auto& primitive : mesh_impl->get_primitives()) {
-            const auto material_index = primitive->get_material();
+        for (const auto& primitive : mesh_impl.get_primitives()) {
+            const auto material_index = primitive.get_material();
             const auto& material = material_index >= 0 ? all_materials[material_index] : all_materials.back();
-            callback(*primitive, *material);
+            callback(primitive, material);
         }
     });
 }

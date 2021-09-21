@@ -2,7 +2,6 @@
 
 #include "gltf_vk.hpp"
 
-#include <gltf/glb_parser.hpp>
 #include <gltf/vk_utils.hpp>
 
 #include <render/vk/errors_handling.hpp>
@@ -11,6 +10,8 @@
 
 #include <filesystem/common_file.hpp>
 
+#include <stb/stb_image.h>
+
 #include <filesystem>
 
 using namespace sandbox;
@@ -18,483 +19,339 @@ using namespace sandbox::hal::render;
 
 namespace
 {
-    class vk_assets_factory : public gltf::assets_factory
+    std::pair<avk::vma_buffer, avk::vma_buffer> create_buffer(
+        vk::CommandBuffer& command_buffer,
+        uint32_t queue_family,
+        uint32_t buffer_size,
+        vk::BufferUsageFlagBits buffer_usage,
+        vk::AccessFlagBits access_flags,
+        const std::function<void(const uint8_t* dst)>& on_mapped_callback)
     {
-    public:
-        ~vk_assets_factory() override = default;
+        auto staging_buffer = avk::gen_staging_buffer(
+            queue_family,
+            buffer_size,
+            on_mapped_callback);
 
-        sandbox::hal::render::avk::vma_buffer create_vertex_buffer(
-            const std::vector<std::unique_ptr<gltf::buffer>>& gltf_buffers,
-            vk::CommandBuffer& command_buffer,
-            uint32_t queue_family)
-        {
-            return create_buffer(
-                command_buffer,
-                queue_family,
-                m_vertex_buffer_size,
-                vk::BufferUsageFlagBits::eVertexBuffer,
-                vk::AccessFlagBits::eVertexAttributeRead,
-                gltf_buffers,
-                m_copy_vertices_data_callbacks);
-        }
+        auto result_buffer = avk::create_vma_buffer(
+            vk::BufferCreateInfo{
+                .flags = {},
+                .size = buffer_size,
+                .usage = vk::BufferUsageFlagBits::eTransferDst | buffer_usage,
+                .sharingMode = vk::SharingMode::eExclusive,
+                .queueFamilyIndexCount = 1,
+                .pQueueFamilyIndices = &queue_family},
+            VmaAllocationCreateInfo{
+                .usage = VMA_MEMORY_USAGE_GPU_ONLY});
 
+        command_buffer.copyBuffer(
+            staging_buffer.as<vk::Buffer>(),
+            result_buffer.as<vk::Buffer>(),
+            {vk::BufferCopy{
+                .srcOffset = 0,
+                .dstOffset = 0,
+                .size = buffer_size,
+            }});
 
-        sandbox::hal::render::avk::vma_buffer create_index_buffer(
-            const std::vector<std::unique_ptr<gltf::buffer>>& gltf_buffers,
-            vk::CommandBuffer& command_buffer,
-            uint32_t queue_family)
-        {
-            if (m_index_buffer_size == 0) {
-                return {};
-            }
+        command_buffer.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTransfer,
+            vk::PipelineStageFlagBits::eVertexInput,
+            {},
+            {vk::MemoryBarrier{
+                .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+                .dstAccessMask = access_flags,
+            }},
+            {},
+            {});
 
-            return create_buffer(
-                command_buffer,
-                queue_family,
-                m_index_buffer_size,
-                vk::BufferUsageFlagBits::eIndexBuffer,
-                vk::AccessFlagBits::eIndexRead,
-                gltf_buffers,
-                m_copy_indices_data_callbacks);
-        }
-
-
-        void init_texture_resources(
-            gltf::gltf_vk::texture& gltf_texture,
-            gltf::gltf_vk::image& gltf_image,
-            gltf::sampler& gltf_sampler,
-            vk::CommandBuffer& command_buffer,
-            uint32_t queue_family)
-        {
-            std::vector<uint8_t> image_pixels{};
-
-            vk::Format format = gltf::stb_channels_count_to_vk_format(gltf_image.get_components_count());
-            const auto tex_fmt_info = avk::get_format_info(static_cast<VkFormat>(format));
-            size_t staging_buffer_size = gltf_image.get_width() * gltf_image.get_height() * tex_fmt_info.size;
-
-            if (gltf_image.get_components_count() == 3) {
-                image_pixels.reserve(gltf_image.get_width() * gltf_image.get_height() * 4);
-
-                for (uint64_t y = 0; y < gltf_image.get_height(); ++y) {
-                    for (uint64_t x = 0; x < gltf_image.get_width(); ++x) {
-                        image_pixels.push_back(gltf_image.get_pixels()[(y * gltf_image.get_width() + x) * 3 + 0]);
-                        image_pixels.push_back(gltf_image.get_pixels()[(y * gltf_image.get_width() + x) * 3 + 1]);
-                        image_pixels.push_back(gltf_image.get_pixels()[(y * gltf_image.get_width() + x) * 3 + 2]);
-                        image_pixels.push_back(255);
-                    }
-                }
-
-                staging_buffer_size = image_pixels.size();
-                format = vk::Format::eR8G8B8A8Srgb;
-            }
-
-            auto staging_buffer = avk::gen_staging_buffer(
-                queue_family,
-                staging_buffer_size,
-                [&gltf_image, &image_pixels, staging_buffer_size](uint8_t* data) {
-                    std::memcpy(data, !image_pixels.empty() ? image_pixels.data() : gltf_image.get_pixels(), staging_buffer_size);
-                });
-
-            auto [image, image_view] = avk::gen_texture(
-                queue_family, vk::ImageViewType::e2D, format, gltf_image.get_width(), gltf_image.get_height());
-
-            auto max_lod = std::max(std::log2f(gltf_image.get_width()), std::log2f(gltf_image.get_height()));
-            auto sampler = avk::gen_sampler(
-                gltf::to_vk_sampler_filter(gltf_sampler.get_mag_filter()).first,
-                gltf::to_vk_sampler_filter(gltf_sampler.get_min_filter()).first,
-                gltf::to_vk_sampler_filter(gltf_sampler.get_min_filter()).second,
-                gltf::to_vk_sampler_wrap(gltf_sampler.get_wrap_s()),
-                gltf::to_vk_sampler_wrap(gltf_sampler.get_wrap_t()),
-                vk::SamplerAddressMode::eRepeat,
-                max_lod);
-
-            avk::copy_buffer_to_image(
-                command_buffer,
-                staging_buffer.as<vk::Buffer>(),
-                image.as<vk::Image>(),
-                gltf_image.get_width(),
-                gltf_image.get_height(),
-                1,
-                1);
-
-            gltf_image.set_vk_image(std::move(image));
-            gltf_image.set_vk_image_view(std::move(image_view));
-            gltf_texture.set_vk_sampler(std::move(sampler));
-
-            m_staging_buffers.emplace_back(std::move(staging_buffer));
-        }
-
-        std::unique_ptr<gltf::texture> create_texture(
-            const nlohmann::json& gltf_json,
-            const nlohmann::json& texture_json) override
-        {
-            return std::make_unique<gltf::gltf_vk::texture>(gltf_json, texture_json);
-        }
-
-        std::unique_ptr<gltf::image> create_image(
-            const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
-            const nlohmann::json& gltf_json,
-            const nlohmann::json& texture_json) override
-        {
-            return std::make_unique<gltf::gltf_vk::image>(buffers, gltf_json, texture_json);
-        }
-
-        size_t get_vertex_buffer_size() const
-        {
-            return m_vertex_buffer_size;
-        }
-
-
-        size_t get_index_buffer_size() const
-        {
-            return m_index_buffer_size;
-        }
-
-
-        void clear_staging_resources()
-        {
-            m_staging_buffers.clear();
-        }
-
-
-        std::unique_ptr<gltf::primitive> create_primitive(
-            const nlohmann::json& gltf_json,
-            const nlohmann::json& primitive_json) override
-        {
-            auto get_buffer_data = [](const auto& meta_src, const std::vector<std::unique_ptr<gltf::buffer>>& buffers) {
-                const auto& buffer = buffers[meta_src.buffer];
-                const auto* src = buffer->get_data().get_data();
-                const auto src_offset = meta_src.buffer_offset;
-                const auto src_size = meta_src.buffer_length;
-
-                return std::make_tuple(src, src_offset, src_size);
-            };
-
-            auto get_copy_data_callback = [get_buffer_data](const auto& meta_src, uint64_t dst_offset) {
-                return [&meta_src, get_buffer_data, dst_offset](const std::vector<std::unique_ptr<gltf::buffer>>& buffers, uint8_t* dst) {
-                    auto [src, src_offset, src_size] = get_buffer_data(meta_src, buffers);
-                    std::memcpy(dst + dst_offset, src + src_offset, src_size);
-                };
-            };
-
-            uint32_t vertex_attr_offset{0};
-            uint32_t attr_location{0};
-
-            auto vk_primitive = std::make_unique<gltf::gltf_vk::primitive>(gltf_json, primitive_json);
-
-            std::vector<vk::VertexInputAttributeDescription> vertex_attributes{};
-
-            vertex_attributes.reserve(vk_primitive->get_attributes_data().size());
-
-            for (const auto& attribute : vk_primitive->get_attributes_data()) {
-                m_copy_vertices_data_callbacks.emplace_back(get_copy_data_callback(attribute, m_vertex_buffer_size));
-                m_vertex_buffer_size += attribute.buffer_length;
-
-                vertex_attributes.emplace_back() = {
-                    .location = attr_location++,
-                    .binding = 0,
-                    .format = to_vk_format(attribute.accessor_type, attribute.component_type),
-                    .offset = vertex_attr_offset,
-                };
-
-                vertex_attr_offset += attribute.buffer_length;
-            }
-
-            vk_primitive->set_vertices_format(vertex_attributes);
-
-            const auto& indices = vk_primitive->get_indices_data();
-
-            if (indices.buffer >= 0) {
-                vk_primitive->set_vertex_buffer_offset(m_index_buffer_size);
-                vk_primitive->set_index_type(to_vk_index_type(indices.accessor_type, indices.component_type));
-
-                m_copy_indices_data_callbacks.emplace_back(get_copy_data_callback(indices, m_index_buffer_size));
-                m_index_buffer_size += indices.buffer_length;
-            }
-
-            return vk_primitive;
-        }
-
-    private:
-        avk::vma_buffer create_buffer(
-            vk::CommandBuffer& command_buffer,
-            uint32_t queue_family,
-            uint32_t buffer_size,
-            vk::BufferUsageFlagBits buffer_usage,
-            vk::AccessFlagBits access_flags,
-            const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
-            const std::vector<std::function<void(const std::vector<std::unique_ptr<gltf::buffer>>&, uint8_t*)>>& copy_callbacks)
-        {
-            auto staging_buffer = avk::gen_staging_buffer(
-                queue_family,
-                buffer_size,
-                [&copy_callbacks, &buffers](uint8_t* dst) {
-                    for (auto& callback : copy_callbacks) {
-                        callback(buffers, dst);
-                    }
-                });
-
-            auto result_buffer = avk::create_vma_buffer(
-                vk::BufferCreateInfo{
-                    .flags = {},
-                    .size = buffer_size,
-                    .usage = vk::BufferUsageFlagBits::eTransferDst | buffer_usage,
-                    .sharingMode = vk::SharingMode::eExclusive,
-                    .queueFamilyIndexCount = 1,
-                    .pQueueFamilyIndices = &queue_family},
-                VmaAllocationCreateInfo{
-                    .usage = VMA_MEMORY_USAGE_GPU_ONLY});
-
-            command_buffer.copyBuffer(
-                staging_buffer.as<vk::Buffer>(),
-                result_buffer.as<vk::Buffer>(),
-                {vk::BufferCopy{
-                    .srcOffset = 0,
-                    .dstOffset = 0,
-                    .size = buffer_size,
-                }});
-
-            command_buffer.pipelineBarrier(
-                vk::PipelineStageFlagBits::eTransfer,
-                vk::PipelineStageFlagBits::eVertexInput,
-                {},
-                {vk::MemoryBarrier{
-                    .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-                    .dstAccessMask = access_flags,
-                }},
-                {},
-                {});
-
-            m_staging_buffers.emplace_back(std::move(staging_buffer));
-
-            return result_buffer;
-        }
-
-        uint64_t m_vertex_buffer_size{0};
-        uint64_t m_index_buffer_size{0};
-
-        std::vector<std::function<void(const std::vector<std::unique_ptr<gltf::buffer>>&, uint8_t*)>> m_copy_vertices_data_callbacks{};
-        std::vector<std::function<void(const std::vector<std::unique_ptr<gltf::buffer>>&, uint8_t*)>> m_copy_indices_data_callbacks{};
-
-        std::vector<avk::vma_buffer> m_staging_buffers{};
-        std::vector<gltf::buffer*> m_gltf_buffers{};
-    };
+        return std::make_pair(std::move(staging_buffer), std::move(result_buffer));
+    }
 } // namespace
 
 
-gltf::gltf_vk::primitive::primitive(const nlohmann::json& gltf_json, const nlohmann::json& primitive_json)
-    : gltf::primitive(gltf_json, primitive_json)
+gltf::vk_geometry gltf::vk_geometry::from_gltf_model(const gltf::model& mdl, vk::CommandBuffer& command_buffer, uint32_t queue_family)
 {
-}
+    gltf::vk_geometry new_geom{};
 
+    new_geom.m_primitives.reserve(mdl.get_meshes().size());
 
-gltf::gltf_vk gltf::gltf_vk::from_url(const std::string& url)
-{
-    gltf::gltf_vk result{};
+    const auto& accessors = mdl.get_accessors();
+    const auto& buffer_views = mdl.get_buffer_views();
+    const auto& buffers = mdl.get_buffers();
 
-    hal::filesystem::common_file file{};
-    file.open(url);
-    result.m_file_data = file.read_all_and_move();
+    uint32_t vertex_buffer_size = 0;
+    uint32_t index_buffer_size = 0;
 
-    if (std::filesystem::path(url).extension() == ".gltf") {
-        const auto file_data = file.read_all();
-        const auto gltf_json = nlohmann::json::parse(
-            result.m_file_data.get_data(),
-            result.m_file_data.get_data() + result.m_file_data.get_size());
-        result.m_model = gltf::model(gltf_json, std::make_unique<vk_assets_factory>());
-    } else {
-        auto glb_data = parse_glb_file(result.m_file_data);
+    for (const auto& gltf_mesh : mdl.get_meshes()) {
+        auto& new_mesh = new_geom.m_primitives.emplace_back();
+        new_mesh.reserve(gltf_mesh.get_primitives().size());
 
-        const auto gltf_json = nlohmann::json::parse(glb_data.json.data, glb_data.json.data + glb_data.json.size);
-        result.m_model = gltf::model(
-            gltf_json,
-            utils::data::create_non_owning(const_cast<uint8_t*>(glb_data.bin.data), glb_data.bin.size),
-            std::make_unique<vk_assets_factory>());
+        for (const auto& gltf_primitive : gltf_mesh.get_primitives()) {
+            auto attrs_bindings_size = gltf_primitive.get_attributes().size();
+
+            auto& new_primitive = new_mesh.emplace_back();
+            new_primitive.attributes.reserve(attrs_bindings_size);
+            new_primitive.bindings.reserve(attrs_bindings_size);
+            new_primitive.vertex_buffer_offset = vertex_buffer_size;
+
+            uint32_t curr_attr_binding_index = 0;
+
+            for (const auto& attr : gltf_primitive.get_attributes()) {
+                const auto& attr_accessor = accessors[attr];
+                if (new_primitive.vertices_count == 0) {
+                    new_primitive.vertices_count = attr_accessor.get_count();
+                } else {
+                    if (new_primitive.vertices_count != attr_accessor.get_count()) {
+                        throw std::runtime_error("Bad primitive");
+                    }
+                }
+
+                const auto vert_attr_fmt = to_vk_format(attr_accessor.get_type(), attr_accessor.get_component_type());
+
+                new_primitive.attributes.emplace_back(vk::VertexInputAttributeDescription{
+                    .location = curr_attr_binding_index,
+                    .binding = curr_attr_binding_index,
+                    .format = vert_attr_fmt,
+                    .offset = vertex_buffer_size,
+                });
+
+                new_primitive.bindings.emplace_back(vk::VertexInputBindingDescription{
+                    .binding = curr_attr_binding_index,
+                    .stride = avk::get_format_info(static_cast<VkFormat>(vert_attr_fmt)).size,
+                    .inputRate = vk::VertexInputRate::eVertex,
+                });
+
+                curr_attr_binding_index++;
+
+                vertex_buffer_size += attr_accessor.get_data_size();
+            }
+
+            if (gltf_primitive.get_indices() >= 0) {
+                const auto& indices_accessor = accessors[gltf_primitive.get_indices()];
+                new_primitive.index_type = to_vk_index_type(indices_accessor.get_type(), indices_accessor.get_component_type());
+                new_primitive.index_buffer_offset = index_buffer_size;
+                new_primitive.indices_count = indices_accessor.get_count();
+
+                index_buffer_size += indices_accessor.get_data_size();
+            }
+        }
     }
 
-    return result;
+    auto [vertex_staging_buffer, vertex_buffer] = create_buffer(
+        command_buffer,
+        queue_family,
+        vertex_buffer_size,
+        vk::BufferUsageFlagBits::eVertexBuffer,
+        vk::AccessFlagBits::eVertexAttributeRead,
+        [&](const uint8_t* dst) {
+            auto vk_mesh = new_geom.m_primitives.begin();
+            for (const auto& gltf_mesh : mdl.get_meshes()) {
+                auto vk_primitive = vk_mesh->begin();
+                for (const auto& gltf_primitive : gltf_mesh.get_primitives()) {
+                    auto vk_attr = vk_primitive->attributes.begin();
+                    for (const auto& attr : gltf_primitive.get_attributes()) {
+                        const auto& accessor = accessors[attr];
+                        std::memcpy(
+                            (void*) (dst + vk_primitive->vertex_buffer_offset + vk_attr->offset),
+                            accessor.get_data(
+                                buffers.data(),
+                                buffers.size(),
+                                buffer_views.data(),
+                                buffer_views.size()),
+                            accessor.get_data_size());
+                        vk_attr++;
+                    }
+                    vk_primitive++;
+                }
+                vk_mesh++;
+            }
+        });
+
+    auto [index_staging_buffer, index_buffer] = create_buffer(
+        command_buffer,
+        queue_family,
+        index_buffer_size,
+        vk::BufferUsageFlagBits::eIndexBuffer,
+        vk::AccessFlagBits::eIndexRead,
+        [&](const uint8_t* dst) {
+            auto vk_mesh = new_geom.m_primitives.begin();
+            for (const auto& gltf_mesh : mdl.get_meshes()) {
+                auto vk_primitive = vk_mesh->begin();
+                for (const auto& gltf_primitive : gltf_mesh.get_primitives()) {
+                    for (const auto& attr : gltf_primitive.get_attributes()) {
+                        if (gltf_primitive.get_indices() >= 0) {
+                            const auto& accessor = accessors[gltf_primitive.get_indices()];
+                            std::memcpy(
+                                (void*) (dst + vk_primitive->index_buffer_offset),
+                                accessor.get_data(
+                                    buffers.data(),
+                                    buffers.size(),
+                                    buffer_views.data(),
+                                    buffer_views.size()),
+                                accessor.get_data_size());
+                        }
+                    }
+                    vk_primitive++;
+                }
+            }
+        });
+
+    new_geom.m_vertex_buffer = std::move(vertex_buffer);
+    new_geom.m_vertex_staging_buffer = std::move(vertex_staging_buffer);
+    new_geom.m_index_buffer = std::move(index_buffer);
+    new_geom.m_index_staging_buffer = std::move(index_staging_buffer);
+
+    return new_geom;
 }
 
 
-void gltf::gltf_vk::create_resources(vk::CommandBuffer& command_buffer, uint32_t queue_family)
-{
-    m_model.get_buffers().front()->get_data();
-
-    auto& assets_factory = static_cast<vk_assets_factory&>(m_model.get_assets_factory());
-
-    m_vertex_buffer = assets_factory.create_vertex_buffer(
-        m_model.get_buffers(), command_buffer, queue_family);
-    m_vertex_buffer_size = assets_factory.get_vertex_buffer_size();
-
-    m_index_buffer = assets_factory.create_index_buffer(
-        m_model.get_buffers(), command_buffer, queue_family);
-    m_index_buffer_size = assets_factory.get_index_buffer_size();
-
-    auto& images = m_model.get_images();
-    auto& samplers = m_model.get_samplers();
-
-    for (auto& texture : m_model.get_textures()) {
-        auto& image = images[texture->get_image()];
-        auto& sampler = samplers[texture->get_sampler()];
-
-        assets_factory.init_texture_resources(
-            static_cast<gltf_vk::texture&>(*texture),
-            static_cast<gltf_vk::image&>(*image),
-            *sampler,
-            command_buffer,
-            queue_family);
-    }
-}
-
-
-void gltf::gltf_vk::clear_staging_resources()
-{
-    static_cast<vk_assets_factory&>(m_model.get_assets_factory()).clear_staging_resources();
-}
-
-
-//void gltf::gltf_vk::draw(gltf_renderer& renderer)
-//{
-//    renderer.draw_scene(
-//        m_model,
-//        m_model.get_current_scene(),
-//        m_vertex_buffer.as<vk::Buffer>(),
-//        m_index_buffer.as<vk::Buffer>());
-//}
-
-
-vk::Buffer gltf::gltf_vk::get_vertex_buffer() const
+vk::Buffer gltf::vk_geometry::get_vertex_buffer() const
 {
     return m_vertex_buffer.as<vk::Buffer>();
 }
 
 
-vk::Buffer gltf::gltf_vk::get_index_buffer() const
+vk::Buffer gltf::vk_geometry::get_index_buffer() const
 {
     return m_index_buffer.as<vk::Buffer>();
 }
 
 
-const gltf::model& gltf::gltf_vk::get_model() const
+void gltf::vk_geometry::clear_staging_resources()
 {
-    return m_model;
+    m_vertex_staging_buffer = {};
+    m_index_staging_buffer = {};
 }
 
 
-void gltf::gltf_vk::primitive::set_vertices_format(const std::vector<vk::VertexInputAttributeDescription>& new_format)
+const std::vector<gltf::vk_primitive>& gltf::vk_geometry::get_primitives(uint32_t mesh) const
 {
-    m_attributes = new_format;
+    return m_primitives[mesh];
+}
 
-    uint32_t curr_binding = 0;
 
-    m_bindings.reserve(m_attributes.size());
+gltf::vk_texture_atlas gltf::vk_texture_atlas::from_gltf_model(
+    const gltf::model& mdl,
+    vk::CommandBuffer& command_buffer,
+    uint32_t queue_family)
+{
+    vk_texture_atlas new_atlas{};
+    new_atlas.m_images.reserve(mdl.get_images().size());
+    new_atlas.m_image_views.reserve(mdl.get_images().size());
+    new_atlas.m_staging_resources.reserve(mdl.get_images().size());
+    new_atlas.m_image_sizes.reserve(mdl.get_images().size());
 
-    for (auto& attribute : m_attributes) {
-        attribute.binding = curr_binding;
 
-        m_bindings.emplace_back(vk::VertexInputBindingDescription{
-            .binding = curr_binding,
-            .stride = avk::get_format_info(static_cast<VkFormat>(attribute.format)).size,
-            .inputRate = vk::VertexInputRate::eVertex});
+    new_atlas.m_samplers.reserve(mdl.get_textures().size());
+    new_atlas.m_vk_textures.reserve(mdl.get_textures().size());
 
-        curr_binding++;
+    const auto& buffers = mdl.get_buffers();
+    const auto& buffer_views = mdl.get_buffer_views();
+
+    struct tex_pixel_data
+    {
+        int w, h, c;
+        std::unique_ptr<void, std::function<void(void*)>> handler{nullptr, [](void* ptr) {if (ptr) stbi_image_free(ptr); }};
+    };
+
+    for (const auto& image : mdl.get_images()) {
+        tex_pixel_data pix_data{};
+
+        if (image.get_buffer_view() >= 0) {
+            const auto& buffer_view = buffer_views[image.get_buffer_view()];
+            const auto* data_ptr = buffer_view.get_data(buffers.data(), buffers.size());
+
+            pix_data.handler.reset(stbi_load_from_memory(
+                data_ptr, buffer_view.get_byte_length(), &pix_data.w, &pix_data.h, &pix_data.c, 0));
+        } else if (!image.get_uri().empty()) {
+            pix_data.handler.reset(stbi_load(image.get_uri().c_str(), &pix_data.w, &pix_data.h, &pix_data.c, 0));
+        } else {
+            throw std::runtime_error("Bad image.");
+        }
+
+        if (pix_data.handler == nullptr) {
+            throw std::runtime_error("Cannot load image.");
+        }
+
+        vk::Format format = gltf::stb_channels_count_to_vk_format(pix_data.c);
+        const auto tex_fmt_info = avk::get_format_info(static_cast<VkFormat>(format));
+        size_t staging_buffer_size = pix_data.w * pix_data.h * tex_fmt_info.size;
+
+        std::vector<uint8_t> rearranged_pix_data{};
+
+        if (pix_data.c == 3) {
+            rearranged_pix_data.reserve(pix_data.w * pix_data.h * 4);
+
+            auto pixels = reinterpret_cast<uint8_t*>(pix_data.handler.get());
+
+            for (uint64_t y = 0; y < pix_data.h; ++y) {
+                for (uint64_t x = 0; x < pix_data.w; ++x) {
+                    rearranged_pix_data.push_back(pixels[(y * pix_data.w + x) * 3 + 0]);
+                    rearranged_pix_data.push_back(pixels[(y * pix_data.w + x) * 3 + 1]);
+                    rearranged_pix_data.push_back(pixels[(y * pix_data.w + x) * 3 + 2]);
+                    rearranged_pix_data.push_back(255);
+                }
+            }
+
+            staging_buffer_size = rearranged_pix_data.size();
+            format = vk::Format::eR8G8B8A8Srgb;
+
+            auto staging_buffer = avk::gen_staging_buffer(
+                queue_family,
+                staging_buffer_size,
+                [&pix_data, &rearranged_pix_data, staging_buffer_size](uint8_t* data) {
+                    std::memcpy(data, rearranged_pix_data.empty() ? pix_data.handler.get() : rearranged_pix_data.data(), staging_buffer_size);
+                });
+
+            auto [image, image_view] = avk::gen_texture(
+                queue_family, vk::ImageViewType::e2D, format, pix_data.w, pix_data.h);
+
+            avk::copy_buffer_to_image(
+                command_buffer,
+                staging_buffer.as<vk::Buffer>(),
+                image.as<vk::Image>(),
+                pix_data.w,
+                pix_data.h,
+                1,
+                1);
+
+            new_atlas.m_images.emplace_back(std::move(image));
+            new_atlas.m_image_views.emplace_back(std::move(image_view));
+            new_atlas.m_staging_resources.emplace_back(std::move(staging_buffer));
+            new_atlas.m_image_sizes.emplace_back(pix_data.w, pix_data.h);
+        }
     }
+
+    const auto& samplers = mdl.get_samplers();
+
+    for (const auto& gltf_texture : mdl.get_textures()) {
+        const auto& gltf_sampler = samplers[gltf_texture.get_sampler()];
+        const auto [width, height] = new_atlas.m_image_sizes[gltf_texture.get_image()];
+
+        auto max_lod = std::max(std::log2f(width), std::log2f(height));
+
+        auto sampler = avk::gen_sampler(
+            gltf::to_vk_sampler_filter(gltf_sampler.get_mag_filter()).first,
+            gltf::to_vk_sampler_filter(gltf_sampler.get_min_filter()).first,
+            gltf::to_vk_sampler_filter(gltf_sampler.get_min_filter()).second,
+            gltf::to_vk_sampler_wrap(gltf_sampler.get_wrap_s()),
+            gltf::to_vk_sampler_wrap(gltf_sampler.get_wrap_t()),
+            vk::SamplerAddressMode::eRepeat,
+            max_lod);
+
+        new_atlas.m_vk_textures.emplace_back(
+            vk_texture{
+                .image = new_atlas.m_images[gltf_texture.get_image()].as<vk::Image>(),
+                .image_view = new_atlas.m_image_views[gltf_texture.get_image()].as<vk::ImageView>(),
+                .sampler = sampler.as<vk::Sampler>()});
+
+        new_atlas.m_samplers.emplace_back(std::move(sampler));
+    }
+
+    return new_atlas;
 }
 
 
-const std::vector<vk::VertexInputAttributeDescription>& gltf::gltf_vk::primitive::get_vertex_attributes() const
+const gltf::vk_texture& gltf::vk_texture_atlas::get_texture(uint32_t index) const
 {
-    return m_attributes;
-}
-
-
-const std::vector<vk::VertexInputBindingDescription>& gltf::gltf_vk::primitive::get_vertex_bindings() const
-{
-    return m_bindings;
-}
-
-
-void gltf::gltf_vk::primitive::set_vertex_buffer_offset(uint64_t offset)
-{
-    m_vertex_buffer_offset = offset;
-}
-
-
-uint64_t gltf::gltf_vk::primitive::get_vertex_buffer_offset() const
-{
-    return m_vertex_buffer_offset;
-}
-
-
-void gltf::gltf_vk::primitive::set_index_type(vk::IndexType new_index_type)
-{
-    m_index_type = new_index_type;
-}
-
-
-vk::IndexType gltf::gltf_vk::primitive::get_index_type() const
-{
-    return m_index_type;
-}
-
-void gltf::gltf_vk::primitive::set_index_buffer_offset(uint64_t offset)
-{
-    m_index_buffer_offset = offset;
-}
-
-
-uint64_t gltf::gltf_vk::primitive::get_index_buffer_offset() const
-{
-    return m_index_buffer_offset;
-}
-
-
-gltf::gltf_vk::texture::texture(const nlohmann::json& gltf_json, const nlohmann::json& texture_json)
-    : gltf::texture(gltf_json, texture_json)
-{
-}
-
-
-void gltf::gltf_vk::texture::set_vk_sampler(hal::render::avk::sampler sampler)
-{
-    m_vk_sampler = std::move(sampler);
-}
-
-
-vk::Sampler gltf::gltf_vk::texture::get_vk_sampler() const
-{
-    return m_vk_sampler.as<vk::Sampler>();
-}
-
-
-gltf::gltf_vk::image::image(
-    const std::vector<std::unique_ptr<gltf::buffer>>& buffers,
-    const nlohmann::json& gltf_json,
-    const nlohmann::json& image_json)
-    : gltf::image(buffers, gltf_json, image_json)
-{
-}
-
-
-void gltf::gltf_vk::image::set_vk_image(hal::render::avk::vma_image image)
-{
-    m_vk_image = std::move(image);
-}
-
-
-void gltf::gltf_vk::image::set_vk_image_view(hal::render::avk::image_view image_view)
-{
-    m_vk_image_view = std::move(image_view);
-}
-
-
-vk::Image gltf::gltf_vk::image::get_vk_image() const
-{
-    return m_vk_image.as<vk::Image>();
-}
-
-
-vk::ImageView gltf::gltf_vk::image::get_vk_image_view() const
-{
-    return m_vk_image_view.as<vk::ImageView>();
+    return m_vk_textures[index];
 }

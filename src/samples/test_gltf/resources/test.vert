@@ -26,15 +26,15 @@ layout(location = 1) out vec2 v_texCoords;
 
 void main()
 {
-//    mat4 anim_matrix =
-//        u_animation_data.bones[a_bones.x] * a_weight.x +
-//        u_animation_data.bones[a_bones.y] * a_weight.y +
-//        u_animation_data.bones[a_bones.z] * a_weight.z +
-//        u_animation_data.bones[a_bones.w] * a_weight.w;
+    //    mat4 anim_matrix =
+    //        u_animation_data.bones[a_bones.x] * a_weight.x +
+    //        u_animation_data.bones[a_bones.y] * a_weight.y +
+    //        u_animation_data.bones[a_bones.z] * a_weight.z +
+    //        u_animation_data.bones[a_bones.w] * a_weight.w;
 
     gl_Position =
         u_instance_data.model_view_proj *
-//        anim_matrix *
+        //        anim_matrix *
         vec4(a_position, 1.0);
 
     gl_Position.y = 1. - gl_Position.y;

@@ -24,6 +24,12 @@ using namespace sandbox::hal::render;
 class test_renderer : public samples::gltf_vk_primitive_renderer
 {
 public:
+    test_renderer(gltf::vk_geometry& g, gltf::vk_texture_atlas& a)
+        : m_geometry(g)
+        , m_tex_atlas(a)
+    {
+    }
+
     ~test_renderer() override = default;
 
     void create_framebuffer(uint32_t width, uint32_t height)
@@ -146,25 +152,27 @@ protected:
         }
 
         for_each_scene_node(model, [this, &model](const gltf::node& node) {
-            if (node.mesh < 0) {
+            if (node.get_mesh() < 0) {
                 return;
             }
 
-            const auto& mesh = model.get_meshes()[node.mesh];
+            const auto& mesh = model.get_meshes()[node.get_mesh()];
             const auto& materials = model.get_materials();
 
-            for (const auto& primitive : mesh->get_primitives()) {
-                const auto& primitive_impl = static_cast<const gltf::gltf_vk::primitive&>(*primitive);
+            const auto& vk_primitives = m_geometry.get_primitives(node.get_mesh());
+            auto curr_vk_primitive = vk_primitives.begin();
+            assert(vk_primitives.size() == mesh.get_primitives().size());
 
+            for (const auto& primitive : mesh.get_primitives()) {
                 pipeline_data curr_pipeline_data{};
-                gltf::material* curr_material{};
+                const gltf::material* curr_material{};
 
-                if (primitive_impl.get_material() < 0) {
-                    curr_material = materials.back().get();
-                    curr_pipeline_data.descriptor_layouts.emplace_back(gltf::create_material_textures_layout(*materials.back()));
+                if (primitive.get_material() < 0) {
+                    curr_material = &materials.back();
+                    curr_pipeline_data.descriptor_layouts.emplace_back(gltf::create_material_textures_layout(materials.back()));
                 } else {
-                    curr_material = materials[primitive->get_material()].get();
-                    curr_pipeline_data.descriptor_layouts.emplace_back(gltf::create_material_textures_layout(*materials[primitive->get_material()]));
+                    curr_material = &materials[primitive.get_material()];
+                    curr_pipeline_data.descriptor_layouts.emplace_back(gltf::create_material_textures_layout(materials[primitive.get_material()]));
                 }
 
                 auto descriptor_set_layouts = avk::to_elements_list<vk::DescriptorSetLayout>(
@@ -172,16 +180,15 @@ protected:
 
                 auto [pool, sets] = avk::gen_descriptor_sets(
                     descriptor_set_layouts,
-                    {{curr_material->get_textures_count(), vk::DescriptorType::eCombinedImageSampler}});
+                    {{1, vk::DescriptorType::eCombinedImageSampler}});
 
                 curr_pipeline_data.pool = std::move(pool);
                 curr_pipeline_data.descriptors = std::move(sets);
 
                 gltf::write_material_textures_descriptors(
-                    *materials[primitive->get_material()],
+                    materials[primitive.get_material()],
                     curr_pipeline_data.descriptors->at(0),
-                    model.get_textures(),
-                    model.get_images());
+                    m_tex_atlas);
 
                 curr_pipeline_data.layout = avk::gen_pipeline_layout(
                     {vk::PushConstantRange{
@@ -191,14 +198,15 @@ protected:
                     descriptor_set_layouts);
 
                 curr_pipeline_data.pipeline = gltf::create_pipeline_from_primitive(
-                    *primitive,
+                    *curr_vk_primitive,
                     {{m_vertex_shader, vk::ShaderStageFlagBits::eVertex},
                      {m_fragment_shader, vk::ShaderStageFlagBits::eFragment}},
                     curr_pipeline_data.layout,
                     m_pass.get_native_pass(),
                     0);
 
-                m_models_primitives_pipelines[node.mesh].emplace_back(std::move(curr_pipeline_data));
+                m_models_primitives_pipelines[node.get_mesh()].emplace_back(std::move(curr_pipeline_data));
+                curr_vk_primitive++;
             }
         });
     }
@@ -223,7 +231,7 @@ protected:
             });
         }
 
-        auto& curr_camera = *model.get_cameras().back();
+        auto& curr_camera = model.get_cameras().back();
 
         struct instance_transform_data
         {
@@ -241,22 +249,12 @@ protected:
         for_each_scene_node(
             model,
             [&proj_matrix, &view_matrix, &models_transforms](const gltf::node& node, const glm::mat4& parent_transform) {
-                auto local_transform = glm::mat4{1};
-
-                if (node.matrix) {
-                    local_transform = node.matrix.value();
-                }
-
-                if (node.transform) {
-                    local_transform = glm::translate(local_transform, node.transform->translation);
-                    local_transform *= glm::mat4_cast(node.transform->rotation);
-                    local_transform = glm::scale(local_transform, node.transform->scale);
-                }
+                auto local_transform = node.get_matrix();
 
                 auto world_transform = parent_transform * local_transform;
 
-                if (node.mesh >= 0) {
-                    models_transforms[node.mesh] = {
+                if (node.get_mesh() >= 0) {
+                    models_transforms[node.get_mesh()] = {
                         .model = world_transform,
                         .view = view_matrix,
                         .proj = proj_matrix,
@@ -315,22 +313,20 @@ protected:
             },
             vk::SubpassContents::eInline);
 
-        for_each_scene_node(model, [this, &models_transforms, &command_buffer, &model, vertex_buffer, index_buffer](const gltf::node& node) {
-            if (node.mesh < 0) {
+        for_each_scene_node(model, [this, &models_transforms, &command_buffer, vertex_buffer, index_buffer](const gltf::node& node) {
+            if (node.get_mesh() < 0) {
                 return;
             }
 
-            auto& mesh = model.get_meshes()[node.mesh];
+            auto curr_pipeline = m_models_primitives_pipelines[node.get_mesh()].begin();
 
-            auto curr_pipeline = m_models_primitives_pipelines[node.mesh].begin();
-
-            for (const auto& primitive : mesh->get_primitives()) {
+            for (const auto& primitive : m_geometry.get_primitives(node.get_mesh())) {
                 command_buffer.pushConstants(
                     curr_pipeline->layout,
                     vk::ShaderStageFlagBits::eVertex,
                     0,
                     sizeof(glm::mat4),
-                    glm::value_ptr(models_transforms[node.mesh].mvp));
+                    glm::value_ptr(models_transforms[node.get_mesh()].mvp));
 
                 command_buffer.bindDescriptorSets(
                     vk::PipelineBindPoint::eGraphics,
@@ -342,7 +338,7 @@ protected:
                     nullptr);
 
                 command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, curr_pipeline->pipeline);
-                gltf::draw_primitive(*primitive, vertex_buffer, index_buffer, command_buffer);
+                gltf::draw_primitive(primitive, vertex_buffer, index_buffer, command_buffer);
                 curr_pipeline++;
             }
         });
@@ -361,6 +357,9 @@ private:
 
         avk::graphics_pipeline pipeline{};
     };
+
+    gltf::vk_texture_atlas& m_tex_atlas;
+    gltf::vk_geometry& m_geometry;
 
     avk::render_pass_wrapper m_pass{};
 
@@ -384,19 +383,19 @@ private:
 class gltf_test_listener : public hal::vk_main_loop_update_listener
 {
 public:
-    explicit gltf_test_listener(gltf::gltf_vk model)
+    explicit gltf_test_listener(gltf::model model)
         : m_model(std::move(model))
     {
     }
 
     void on_swapchain_reset(size_t width, size_t height) override
     {
-        m_renderer.create_framebuffer(width, height);
+        m_renderer->create_framebuffer(width, height);
     }
 
     vk::Image get_present_image() const override
     {
-        return m_renderer.get_draw_attachment();
+        return m_renderer->get_draw_attachment();
     }
 
     vk::ImageLayout get_present_image_layout() const override
@@ -407,8 +406,8 @@ public:
     vk::Extent2D get_present_image_size() const override
     {
         return {
-            static_cast<uint32_t>(m_renderer.get_framebuffer_size().first),
-            static_cast<uint32_t>(m_renderer.get_framebuffer_size().second)};
+            static_cast<uint32_t>(m_renderer->get_framebuffer_size().first),
+            static_cast<uint32_t>(m_renderer->get_framebuffer_size().second)};
     }
 
     std::vector<vk::Semaphore> get_wait_semaphores() const override
@@ -435,7 +434,9 @@ public:
             .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
         });
 
-        m_model.create_resources(curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
+        m_geometry = gltf::vk_geometry::from_gltf_model(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
+        m_texture_atlas = gltf::vk_texture_atlas::from_gltf_model(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
+        m_renderer.emplace(m_geometry, m_texture_atlas);
 
         curr_buffer.end();
 
@@ -453,7 +454,7 @@ public:
 
         VK_CALL(avk::context::device()->waitForFences({fence}, VK_TRUE, UINT64_MAX));
 
-        m_renderer.create_pass();
+        m_renderer->create_pass();
     }
 
     void update(uint64_t dt) override
@@ -462,20 +463,22 @@ public:
             m_semaphore = avk::create_semaphore(avk::context::device()->createSemaphore({}));
         }
 
-        m_renderer.draw_scene(m_model.get_model(), m_model.get_vertex_buffer(), m_model.get_index_buffer());
+        m_renderer->draw_scene(m_model, m_geometry.get_vertex_buffer(), m_geometry.get_index_buffer());
 
         vk::Queue queue = avk::context::queue(vk::QueueFlagBits::eGraphics, 0);
         queue.submit(vk::SubmitInfo{
             .commandBufferCount = 1,
-            .pCommandBuffers = m_renderer.get_command_buffers()->data(),
+            .pCommandBuffers = m_renderer->get_command_buffers()->data(),
             .signalSemaphoreCount = 1,
             .pSignalSemaphores = m_semaphore.handler_ptr(),
         });
     }
 
 private:
-    test_renderer m_renderer{};
-    gltf::gltf_vk m_model{};
+    gltf::model m_model{};
+    gltf::vk_geometry m_geometry{};
+    gltf::vk_texture_atlas m_texture_atlas{};
+    std::optional<test_renderer> m_renderer;
 
     avk::semaphore m_semaphore{};
 };
@@ -485,9 +488,9 @@ int main(int argv, const char** argc)
 {
     //    RDOC_INIT_SCOPE();
 
-    gltf::gltf_vk gltf = gltf::gltf_vk::from_url("./resources/BoxTexturedNonPowerOfTwo.glb");
+    gltf::model model = gltf::model::from_url("./resources/BoxTexturedNonPowerOfTwo.glb");
 
-    auto dummy_listener = std::make_unique<gltf_test_listener>(std::move(gltf));
+    auto dummy_listener = std::make_unique<gltf_test_listener>(std::move(model));
 
     sandbox::hal::window window(800, 600, "sandbox window", std::move(dummy_listener));
 
