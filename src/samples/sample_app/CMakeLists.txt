@@ -1,0 +1,10 @@
+make_bin(
+    NAME
+        sandbox_sample_app
+    LIB
+    LIB_TYPE
+        STATIC
+    DEPENDS
+        hal_render
+        hal_window
+)

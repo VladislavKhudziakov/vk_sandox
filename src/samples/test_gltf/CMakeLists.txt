@@ -2,9 +2,10 @@ make_bin(
     NAME
         test_gltf
     DEPENDS
-        hal_window
+#        hal_window
         hal_filesystem
-        samples_utils
+        sandbox_sample_app
+#        samples_utils
         gltf
         hal_renderdoc
     RESOURCES_EXTENSIONS

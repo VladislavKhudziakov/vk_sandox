@@ -32,7 +32,6 @@ namespace sandbox::gltf
     {
     public:
         explicit buffer(utils::data);
-        //        explicit buffer(const std::string&);
         explicit buffer(const nlohmann::json& buffer_json);
 
         const uint8_t* get_data() const;
@@ -118,12 +117,6 @@ namespace sandbox::gltf
     public:
         explicit image(const nlohmann::json& image_json);
 
-        //        size_t get_width() const;
-        //        size_t get_height() const;
-        //        size_t get_components_count() const;
-
-        //        const uint8_t* get_pixels() const;
-
         const std::string& get_uri() const;
         int32_t get_buffer_view() const;
 
@@ -168,47 +161,20 @@ namespace sandbox::gltf
     class primitive
     {
     public:
-        //        struct attribute_data
-        //        {
-        //            uint32_t buffer{0};
-        //            uint64_t buffer_offset{0};
-        //            uint64_t buffer_length{0};
-        //            gltf::accessor_type accessor_type{};
-        //            gltf::component_type component_type{};
-        //        };
-
-        //        struct indices_data
-        //        {
-        //            int32_t buffer{-1};
-        //            uint64_t indices_count{0};
-        //            uint64_t buffer_offset{0};
-        //            uint64_t buffer_length{0};
-        //            gltf::accessor_type accessor_type{};
-        //            gltf::component_type component_type{};
-        //        };
-
         explicit primitive(const nlohmann::json& primitive_json);
 
-        //        const std::vector<attribute_data>& get_attributes_data() const;
-        //        const indices_data& get_indices_data() const;
-        //        uint64_t get_vertices_count() const;
         const std::vector<uint32_t>& get_attributes() const;
         const std::vector<attribute_path>& get_attributes_paths() const;
 
         int32_t get_material() const;
         int32_t get_indices() const;
 
-        //        int32_t get_material() const;
-
     private:
-        //        std::vector<attribute_data> m_attributes{};
         std::vector<uint32_t> m_attributes{};
         std::vector<attribute_path> m_attributes_paths{};
 
         int32_t m_material{-1};
         int32_t m_indices{-1};
-        //        uint64_t m_vertices_count{0};
-        //        indices_data m_indices_data{};
     };
 
 
@@ -300,16 +266,11 @@ namespace sandbox::gltf
         glm::mat4 get_matrix() const;
 
     private:
-        //        trs_transform& get_transform();
-
         int32_t m_mesh = -1;
         int32_t m_skin = -1;
         std::vector<int32_t> m_children{};
 
         std::variant<trs_transform, glm::mat4> m_transform_data{trs_transform{}};
-        //
-        //        std::optional<trs_transform> m_transform{};
-        //        std::optional<glm::mat4> m_matrix{};
     };
 
 
@@ -415,74 +376,6 @@ namespace sandbox::gltf
     };
 
 
-    //    class assets_factory
-    //    {
-    //    public:
-    //        using BufferT = buffer;
-    //        using BufferViewT = buffer_view;
-    //        using AccesssorT = accessor;
-    //        using SceneT = scene;
-    //        using NodeT = node;
-    //        using MaterialT = material;
-    //        using TextureT = texture;
-    //        using ImageT = image;
-    //        using SamplerT = sampler;
-    //        using MeshT = mesh;
-    //        using CameraT = camera;
-    //        using AnimationT = animation;
-    //        using SkinT = skin;
-    //
-    //        virtual ~assets_factory() = default;
-    //
-    //        buffer create_buffer(
-    //            const nlohmann::json& buffer_json);
-    //
-    //        buffer_view create_buffer_view(
-    //            const nlohmann::json& buffer_view_json);
-    //
-    //        accessor create_accessor(
-    //            const nlohmann::json& accessor_json);
-    //
-    //        scene create_scene(
-    //            const nlohmann::json& scene_json);
-    //
-    //        material create_material(
-    //            const nlohmann::json& material_json);
-    //
-    //        node create_node(
-    //            const nlohmann::json& node_json);
-    //
-    //        skin create_skin(
-    //            const nlohmann::json& skin_json);
-    //
-    //        mesh create_mesh(
-    //            const nlohmann::json& mesh_json);
-    //
-    ////        virtual std::unique_ptr<buffer> create_buffer(utils::data);
-    ////
-    ////        virtual std::unique_ptr<buffer> create_buffer(const std::string&);
-    //
-    ////        virtual std::unique_ptr<primitive> create_primitive(
-    ////            const nlohmann::json& primitive_json);
-    //
-    //        camera create_camera(
-    //            const nlohmann::json& camera_json);
-    //
-    //        texture create_texture(
-    //            const nlohmann::json& texture_json);
-    //
-    //        image create_image(
-    //            const nlohmann::json& image_json);
-    //
-    //        sampler create_sampler(
-    //            const nlohmann::json& sampler_json);
-    //
-    //        animation create_animation(
-    //            const nlohmann::json& animation_json);
-    //    };
-
-
-    //    template <typename AssetsFactoryT = assets_factory>
     class model
     {
     public:
@@ -511,19 +404,7 @@ namespace sandbox::gltf
                 return m;
             }
         }
-        //        using BufferT = typename AssetsFactoryT::BufferT;
-        //        using BufferViewT = typename AssetsFactoryT::BufferViewT;
-        //        using AccesssorT = typename AssetsFactoryT::AccesssorT;
-        //        using SceneT = typename AssetsFactoryT::SceneT;
-        //        using NodeT = typename AssetsFactoryT::NodeT;
-        //        using MeshT = typename AssetsFactoryT::MeshT;
-        //        using MaterialT = typename AssetsFactoryT::MaterialT;
-        //        using TextureT = typename AssetsFactoryT::TextureT;
-        //        using ImageT = typename AssetsFactoryT::ImageT;
-        //        using SamplerT = typename AssetsFactoryT::SamplerT;
-        //        using CameraT = typename AssetsFactoryT::CameraT;
-        //        using SkinT = typename AssetsFactoryT::SkinT;
-        //        using AnimationT = typename AssetsFactoryT::AnimationT;
+
 
         model() = default;
 
@@ -541,18 +422,15 @@ namespace sandbox::gltf
                 m_nodes.emplace_back(node);
             }
 
-            do_if_found(gltf_json, "cameras", [&gltf_json, this](const json& cameras) {
+            do_if_found(gltf_json, "cameras", [this](const json& cameras) {
                 m_cameras.reserve(cameras.size());
                 for (const auto& camera : cameras) {
                     m_cameras.emplace_back(camera);
                 }
             });
 
-            nlohmann::json jj{};
-
             m_cameras.emplace_back();
 
-            //            if (gltf_json.template find("buffers") != gltf_json.end()) {
             if (glb_data.has_value()) {
                 m_buffers.emplace_back(std::move(*glb_data));
             }
@@ -561,22 +439,7 @@ namespace sandbox::gltf
 
             for (auto& buffer : gltf_json["buffers"]) {
                 m_buffers.emplace_back(buffer);
-                //                if (buffer.find("uri") != buffer.end()) {
-                //                    m_buffers.emplace_back(m_assets_factory->create_buffer(buffer["uri"].get<std::string>()));
-                //
-                //                    // clang-format off
-                //                    CHECK_MSG(
-                //                        m_buffers.back()->get_data().get_size() == buffer["byteLength"],
-                //                        "Bad model buffer size. Expected: " +
-                //                        std::to_string(buffer["byteLength"].get<int32_t>()) +
-                //                        " Actual: " + std::to_string(m_buffers.back()->get_data().get_size()));
-                //                    // clang-format on
-                //                } else {
-                //                    // assume that glb buffer was pushed previously. If not gltf model doesn't follow gltf 2.0 spec.
-                //                    CHECK_MSG(m_buffers.size() == 1, "Not first glb buffers are not allowed.");
-                //                }
             }
-            //            }
 
             for (auto& buffer_view : gltf_json["bufferViews"]) {
                 m_buffer_views.emplace_back(buffer_view);
@@ -587,28 +450,28 @@ namespace sandbox::gltf
                 m_accessors.emplace_back(std::move(new_accessor));
             }
 
-            do_if_found(gltf_json, "images", [&gltf_json, this](const json& images) {
+            do_if_found(gltf_json, "images", [this](const json& images) {
                 m_images.reserve(images.size());
                 for (const auto& image : images) {
                     m_images.emplace_back(image);
                 }
             });
 
-            do_if_found(gltf_json, "samplers", [&gltf_json, this](const json& samplers) {
+            do_if_found(gltf_json, "samplers", [this](const json& samplers) {
                 m_samplers.reserve(samplers.size());
                 for (const auto& sampler : samplers) {
                     m_samplers.emplace_back(sampler);
                 }
             });
 
-            do_if_found(gltf_json, "textures", [&gltf_json, this](const json& textures) {
+            do_if_found(gltf_json, "textures", [this](const json& textures) {
                 m_textures.reserve(textures.size());
                 for (const auto& texture : textures) {
                     m_textures.emplace_back(texture);
                 }
             });
 
-            do_if_found(gltf_json, "materials", [&gltf_json, this](const json& materials) {
+            do_if_found(gltf_json, "materials", [this](const json& materials) {
                 m_materials.reserve(materials.size());
                 for (const auto& material : materials) {
                     m_materials.emplace_back(material);
@@ -622,24 +485,22 @@ namespace sandbox::gltf
                 m_meshes.emplace_back(mesh);
             }
 
-            do_if_found(gltf_json, "animations", [&gltf_json, this](const json& animations) {
+            do_if_found(gltf_json, "animations", [this](const json& animations) {
                 m_animations.reserve(animations.size());
                 for (const auto& animation : animations) {
                     m_samplers.emplace_back(animation);
                 }
             });
 
-            do_if_found(gltf_json, "skins", [&gltf_json, this](const json& skins) {
+            do_if_found(gltf_json, "skins", [this](const json& skins) {
                 m_skins.reserve(skins.size());
                 for (const auto& skin : skins) {
                     m_skins.emplace_back(skin);
                 }
             });
         }
-        //
-        //        model(const nlohmann::json& gltf_json, utils::data glb_data, std::unique_ptr<assets_factory> assets_factory)
-        //        {
-        //        }
+
+
         const std::vector<scene>& get_scenes() const
         {
             return m_scenes;
@@ -709,9 +570,6 @@ namespace sandbox::gltf
         {
             return m_current_scene;
         }
-        //        uint32_t get_current_scene() const;
-        //
-        //        assets_factory& get_assets_factory();
 
     private:
         uint32_t m_current_scene{0};
@@ -736,18 +594,48 @@ namespace sandbox::gltf
         std::vector<skin> m_skins{};
 
         utils::data glb_data_buffer{};
-
-        //        std::vector<std::unique_ptr<scene>> m_scenes{};
-        //        std::vector<std::unique_ptr<material>> m_materials{};
-        //        std::vector<std::unique_ptr<node>> m_nodes{};
-        //        std::vector<std::unique_ptr<skin>> m_skins{};
-        //        std::vector<std::unique_ptr<mesh>> m_meshes{};
-        //        std::vector<std::unique_ptr<buffer>> m_buffers{};
-        //        std::vector<std::unique_ptr<texture>> m_textures{};
-        //        std::vector<std::unique_ptr<image>> m_images{};
-        //        std::vector<std::unique_ptr<sampler>> m_samplers{};
-        //        std::vector<std::unique_ptr<camera>> m_cameras{};
-
-        //        std::unique_ptr<AssetsFactoryT> m_assets_factory{};
     };
+
+    template<typename Callable, typename... Args>
+    void for_each_node_child(
+        const std::vector<int32_t>& curr_nodes,
+        const std::vector<gltf::node>& all_nodes,
+        const Callable& callback,
+        Args&&... args)
+    {
+        for (int32_t node : curr_nodes) {
+            const auto& node_impl = all_nodes[node];
+            if constexpr (std::is_same_v<decltype(callback(all_nodes[node], std::forward<Args>(args)...)), void>) {
+                callback(all_nodes[node], std::forward<Args>(args)...);
+                for_each_node_child(
+                    node_impl.get_children(),
+                    all_nodes,
+                    callback);
+            } else {
+                for_each_node_child(
+                    node_impl.get_children(),
+                    all_nodes,
+                    callback,
+                    callback(all_nodes[node], std::forward<Args>(args)...));
+            }
+        }
+    }
+
+    template<typename Callable, typename... Args>
+    void for_each_scene_node(
+        const gltf::model& model,
+        const Callable& callback,
+        Args&&... args)
+    {
+        const auto& scenes = model.get_scenes();
+        const auto& all_nodes = model.get_nodes();
+
+        const auto& scene_nodes = scenes[model.get_current_scene()].get_nodes();
+
+        for_each_node_child(
+            scene_nodes,
+            all_nodes,
+            callback,
+            std::forward<Args>(args)...);
+    }
 } // namespace sandbox::gltf
