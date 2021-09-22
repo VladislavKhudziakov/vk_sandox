@@ -1,9 +1,39 @@
 
 #include "common_file.hpp"
 
+#include <filesystem>
+
+sandbox::hal::filesystem::common_file::common_file(const std::string& mount_dir)
+    : m_cwd(mount_dir)
+{
+    if (!m_cwd.empty()) {
+        m_prev_cwd = std::filesystem::current_path().string();
+        std::filesystem::current_path(m_cwd);
+    }
+}
+
+
+sandbox::hal::filesystem::common_file::~common_file()
+{
+    if (!m_prev_cwd.empty()) {
+        std::filesystem::current_path(m_prev_cwd);
+    }
+}
+
+
 void sandbox::hal::filesystem::common_file::open(const std::string& url)
 {
-    m_file_handler.reset(std::fopen(url.c_str(), "rb"));
+    std::string full_path{};
+    if (!m_cwd.empty()) {
+        full_path = (std::filesystem::path(m_cwd) / std::filesystem::path(url)).string();
+    }
+
+    m_file_handler.reset(std::fopen(full_path.empty() ? url.c_str() : full_path.c_str(), "rb"));
+
+    if (!m_file_handler) {
+        throw filesystem::cannot_open_file_error("cannot open file " + url + (m_cwd.empty() ? "" : " in directory " + m_cwd) + ".");
+    }
+
     m_data_buffer.clear();
     m_size = 0;
 }

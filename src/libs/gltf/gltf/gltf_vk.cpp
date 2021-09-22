@@ -263,7 +263,8 @@ gltf::vk_texture_atlas gltf::vk_texture_atlas::from_gltf_model(
             pix_data.handler.reset(stbi_load_from_memory(
                 data_ptr, buffer_view.get_byte_length(), &pix_data.w, &pix_data.h, &pix_data.c, 0));
         } else if (!image.get_uri().empty()) {
-            pix_data.handler.reset(stbi_load(image.get_uri().c_str(), &pix_data.w, &pix_data.h, &pix_data.c, 0));
+            const auto abs_path = (std::filesystem::path(mdl.get_cwd()) / image.get_uri()).string();
+            pix_data.handler.reset(stbi_load(abs_path.c_str(), &pix_data.w, &pix_data.h, &pix_data.c, 0));
         } else {
             throw std::runtime_error("Bad image.");
         }

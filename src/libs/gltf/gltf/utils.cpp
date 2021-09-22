@@ -232,7 +232,7 @@ sandbox::gltf::image_mime_type_value::image_mime_type_value(const char* value)
         type = image_mime_type::jpeg;
     } else if (strcmp(IMAGE_MIME_TYPE_PNG, value) == 0) {
         type = image_mime_type::png;
-    } else {
+    } else if (strcmp("", value) != 0) {
         throw std::runtime_error("Bad image mime type " + std::string(value));
     }
 }

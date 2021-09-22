@@ -18,4 +18,15 @@ namespace sandbox::hal::filesystem
 
         virtual size_t get_size() = 0;
     };
+
+    class cannot_open_file_error : public std::exception
+    {
+    public:
+        cannot_open_file_error(const std::string&);
+        ~cannot_open_file_error() noexcept override = default;
+        const char* what() const override;
+
+    private:
+        std::string m_err_msg{};
+    };
 } // namespace sandbox::hal::filesystem

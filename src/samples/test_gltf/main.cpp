@@ -175,7 +175,8 @@ protected:
 
     const std::vector<vk::Fence>& get_wait_fences() override
     {
-        return {};
+        static std::vector<vk::Fence> empty{};
+        return empty;
     }
 
 private:
@@ -437,7 +438,7 @@ private:
 
 int main(int argv, const char** argc)
 {
-    test_sample_app app{"./resources/BoxTexturedNonPowerOfTwo.glb"};
+    test_sample_app app{"D:\\dev\\glTF-Sample-Models\\2.0\\BoxTexturedNonPowerOfTwo\\glTF\\BoxTexturedNonPowerOfTwo.gltf"};
     app.main_loop();
 
     return 0;

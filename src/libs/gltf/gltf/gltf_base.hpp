@@ -321,7 +321,7 @@ namespace sandbox::gltf
         glm::vec3 m_emissive_factor{0, 0, 0};
         alpha_mode_value m_alpha_mode{};
         float m_alpha_cutoff{0.5};
-        size_t m_textures_count{0};
+        mutable int32_t m_textures_count{-1};
         bool m_double_sided{false};
     };
 
@@ -379,197 +379,31 @@ namespace sandbox::gltf
     class model
     {
     public:
-        static model from_url(const std::string& url)
-        {
-            hal::filesystem::common_file file{};
-            file.open(url);
-
-            auto file_data = file.read_all_and_move();
-
-            if (std::filesystem::path(url).extension() == ".gltf") {
-                const auto file_data = file.read_all();
-                const auto gltf_json = nlohmann::json::parse(
-                    file_data.get_data(),
-                    file_data.get_data() + file_data.get_size());
-                return gltf::model(gltf_json);
-            } else {
-                auto glb_data = parse_glb_file(file_data.get_data(), file_data.get_size());
-
-                const auto gltf_json = nlohmann::json::parse(glb_data.json.data, glb_data.json.data + glb_data.json.size);
-                auto m = gltf::model(
-                    gltf_json,
-                    utils::data::create_non_owning(const_cast<uint8_t*>(glb_data.bin.data), glb_data.bin.size));
-                m.glb_data_buffer = std::move(file_data);
-
-                return m;
-            }
-        }
-
+        static model from_url(const std::string& url);
 
         model() = default;
 
-        explicit model(const nlohmann::json& gltf_json, std::optional<utils::data> glb_data = std::nullopt)
-        {
-            using namespace nlohmann;
+        explicit model(
+            const nlohmann::json& gltf_json,
+            const std::string& cwd,
+            std::optional<utils::data> glb_data = std::nullopt);
 
-            m_scenes.reserve(gltf_json["scenes"].size());
-            for (const auto& scene : gltf_json["scenes"]) {
-                m_scenes.emplace_back(scene);
-            }
+        const std::vector<scene>& get_scenes() const;
+        const std::vector<camera>& get_cameras() const;
+        const std::vector<node>& get_nodes() const;
+        const std::vector<buffer>& get_buffers() const;
+        const std::vector<buffer_view>& get_buffer_views() const;
+        const std::vector<accessor>& get_accessors() const;
+        const std::vector<image>& get_images() const;
+        const std::vector<sampler>& get_samplers() const;
+        const std::vector<texture>& get_textures() const;
+        const std::vector<material>& get_materials() const;
+        const std::vector<mesh>& get_meshes() const;
+        const std::vector<animation>& get_animations() const;
+        const std::vector<skin>& get_skins() const;
+        uint32_t get_current_scene() const;
 
-            m_nodes.reserve(gltf_json["nodes"].size());
-            for (const auto& node : gltf_json["nodes"]) {
-                m_nodes.emplace_back(node);
-            }
-
-            do_if_found(gltf_json, "cameras", [this](const json& cameras) {
-                m_cameras.reserve(cameras.size());
-                for (const auto& camera : cameras) {
-                    m_cameras.emplace_back(camera);
-                }
-            });
-
-            m_cameras.emplace_back();
-
-            if (glb_data.has_value()) {
-                m_buffers.emplace_back(std::move(*glb_data));
-            }
-
-            m_buffers.reserve(gltf_json["buffers"].size() + m_buffers.size());
-
-            for (auto& buffer : gltf_json["buffers"]) {
-                m_buffers.emplace_back(buffer);
-            }
-
-            for (auto& buffer_view : gltf_json["bufferViews"]) {
-                m_buffer_views.emplace_back(buffer_view);
-            }
-
-            for (auto& accessor_json : gltf_json["accessors"]) {
-                auto new_accessor = accessor(accessor_json);
-                m_accessors.emplace_back(std::move(new_accessor));
-            }
-
-            do_if_found(gltf_json, "images", [this](const json& images) {
-                m_images.reserve(images.size());
-                for (const auto& image : images) {
-                    m_images.emplace_back(image);
-                }
-            });
-
-            do_if_found(gltf_json, "samplers", [this](const json& samplers) {
-                m_samplers.reserve(samplers.size());
-                for (const auto& sampler : samplers) {
-                    m_samplers.emplace_back(sampler);
-                }
-            });
-
-            do_if_found(gltf_json, "textures", [this](const json& textures) {
-                m_textures.reserve(textures.size());
-                for (const auto& texture : textures) {
-                    m_textures.emplace_back(texture);
-                }
-            });
-
-            do_if_found(gltf_json, "materials", [this](const json& materials) {
-                m_materials.reserve(materials.size());
-                for (const auto& material : materials) {
-                    m_materials.emplace_back(material);
-                }
-            });
-
-            m_materials.emplace_back();
-
-            m_meshes.reserve(gltf_json["meshes"].size());
-            for (const auto& mesh : gltf_json["meshes"]) {
-                m_meshes.emplace_back(mesh);
-            }
-
-            do_if_found(gltf_json, "animations", [this](const json& animations) {
-                m_animations.reserve(animations.size());
-                for (const auto& animation : animations) {
-                    m_samplers.emplace_back(animation);
-                }
-            });
-
-            do_if_found(gltf_json, "skins", [this](const json& skins) {
-                m_skins.reserve(skins.size());
-                for (const auto& skin : skins) {
-                    m_skins.emplace_back(skin);
-                }
-            });
-        }
-
-
-        const std::vector<scene>& get_scenes() const
-        {
-            return m_scenes;
-        }
-
-        const std::vector<camera>& get_cameras() const
-        {
-            return m_cameras;
-        }
-
-        const std::vector<node>& get_nodes() const
-        {
-            return m_nodes;
-        }
-
-        const std::vector<buffer>& get_buffers() const
-        {
-            return m_buffers;
-        }
-
-        const std::vector<buffer_view>& get_buffer_views() const
-        {
-            return m_buffer_views;
-        }
-
-        const std::vector<accessor>& get_accessors() const
-        {
-            return m_accessors;
-        }
-
-        const std::vector<image>& get_images() const
-        {
-            return m_images;
-        }
-
-        const std::vector<sampler>& get_samplers() const
-        {
-            return m_samplers;
-        }
-
-        const std::vector<texture>& get_textures() const
-        {
-            return m_textures;
-        }
-
-        const std::vector<material>& get_materials() const
-        {
-            return m_materials;
-        }
-
-        const std::vector<mesh>& get_meshes() const
-        {
-            return m_meshes;
-        }
-
-        const std::vector<animation>& get_animations() const
-        {
-            return m_animations;
-        }
-
-        const std::vector<skin>& get_skins() const
-        {
-            return m_skins;
-        }
-
-        uint32_t get_current_scene() const
-        {
-            return m_current_scene;
-        }
+        const std::string& get_cwd() const;
 
     private:
         uint32_t m_current_scene{0};
@@ -593,6 +427,7 @@ namespace sandbox::gltf
         std::vector<animation> m_animations{};
         std::vector<skin> m_skins{};
 
+        std::string m_cwd{};
         utils::data glb_data_buffer{};
     };
 
