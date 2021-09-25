@@ -223,7 +223,11 @@ sandbox::hal::render::avk::graphics_pipeline sandbox::gltf::create_pipeline_from
     bool backfaces,
     bool zwrite,
     bool ztest,
-    bool color_write)
+    bool color_write,
+    bool use_hierarchy,
+    bool use_skin,
+    uint32_t hierarchy_size,
+    uint32_t skin_size)
 {
     // clang-format off
 
@@ -234,12 +238,50 @@ sandbox::hal::render::avk::graphics_pipeline sandbox::gltf::create_pipeline_from
     std::vector<vk::PipelineShaderStageCreateInfo> pipeline_stages{};
     pipeline_stages.reserve(stages.size());
 
+    vk::SpecializationMapEntry entries[] {
+          vk::SpecializationMapEntry {
+              .constantID = 0, // USE_HIERARCHY
+              .offset = sizeof(uint32_t) * 0,
+              .size = sizeof(uint32_t)
+          },
+          vk::SpecializationMapEntry {
+              .constantID = 1, // USE_SKINNING
+              .offset = sizeof(uint32_t) * 1,
+              .size = sizeof(uint32_t)
+          },
+          vk::SpecializationMapEntry {
+              .constantID = 2, // HIERARCHY_SIZE
+              .offset = sizeof(uint32_t) * 2,
+              .size = sizeof(uint32_t)
+          },
+          vk::SpecializationMapEntry {
+              .constantID = 3, // SKIN_SIZE
+              .offset = sizeof(uint32_t) * 3,
+              .size = sizeof(uint32_t)
+          },
+    };
+
+    uint32_t vs_data_array[] {
+        use_hierarchy, // USE_HIERARCHY
+        use_skin, // USE_SKINNING
+        hierarchy_size, // HIERARCHY_SIZE
+        skin_size, // SKIN_SIZE
+    };
+
+    vk::SpecializationInfo spec_info {
+        .mapEntryCount = std::size(entries),
+        .pMapEntries = entries,
+        .dataSize = sizeof(vs_data_array),
+        .pData = vs_data_array
+    };
+
     for (const auto [module, stage] : stages) {
         pipeline_stages.emplace_back(vk::PipelineShaderStageCreateInfo{
             .flags = {},
             .stage = stage,
             .module = module,
             .pName = "main",
+            .pSpecializationInfo = stage == vk::ShaderStageFlagBits::eVertex ? &spec_info : nullptr
         });
     }
 
@@ -430,6 +472,39 @@ void sandbox::gltf::write_material_textures_descriptors(
 }
 
 
+void gltf::write_node_uniforms_descriptors(
+    const gltf::node& node,
+    vk::DescriptorSet dst_set,
+    vk::Buffer instance_data_buffer,
+    const gltf::vk_geometry_skins& geom_skins)
+{
+    if (node.get_mesh() < 0) {
+        return;
+    }
+
+    const auto& skin = node.get_skin() >= 0 ? geom_skins.get_skins()[node.get_skin()] : geom_skins.get_skins().back();
+
+    avk::write_buffer_descriptors(
+        dst_set,
+        {
+            instance_data_buffer,
+            geom_skins.get_hierarchy_buffer().as<vk::Buffer>(),
+            geom_skins.get_skin_buffer().as<vk::Buffer>()
+        },
+        {
+            {node.get_mesh() * sizeof(instance_transform_data), sizeof(instance_transform_data)},
+            {0, geom_skins.get_hierarchy_transforms().size() * sizeof(geom_skins.get_hierarchy_transforms().front())},
+            {skin.offset, skin.size}
+        });
+}
+
+
+sandbox::hal::render::avk::descriptor_set_layout gltf::create_primitive_uniforms_layout(const gltf::vk_primitive& primitive)
+{
+    return avk::gen_descriptor_set_layout(3, vk::DescriptorType::eUniformBuffer);
+}
+
+
 sandbox::gltf::vk_material_info sandbox::gltf::vk_material_info::from_gltf_material(const sandbox::gltf::material& material)
 {
     auto get_texture_cords_set = [](const gltf::material::texture_data& tex_data) {
@@ -455,4 +530,176 @@ sandbox::gltf::vk_material_info sandbox::gltf::vk_material_info::from_gltf_mater
         .alpha_mode = static_cast<int32_t>(material.get_alpha_mode()),
         .alpha_cutoff = material.get_alpha_cutoff(),
         .double_sided = material.is_double_sided()};
+}
+
+
+gltf::cpu_animation_controller::cpu_animation_controller(const gltf::animation& animation)
+    : m_animation(animation)
+{
+}
+
+
+void gltf::cpu_animation_controller::update(const gltf::model& model, uint64_t dt)
+{
+    if (!m_need_update) {
+        return;
+    }
+
+    calculate_frame(model);
+
+    m_curr_time += dt;
+}
+
+
+void gltf::cpu_animation_controller::play()
+{
+    m_need_update = true;
+}
+
+
+void gltf::cpu_animation_controller::pause()
+{
+    m_need_update = false;
+}
+
+
+void gltf::cpu_animation_controller::calculate_frame(const gltf::model& model)
+{
+    const auto& accessors = model.get_accessors();
+    const auto& buffers = model.get_buffers();
+    const auto& buffer_views = model.get_buffer_views();
+
+    const auto& channels = m_animation.get_channels();
+    const auto& samplers = m_animation.get_samplers();
+
+    m_trs_transforms.resize(model.get_nodes().size());
+    m_transformations.resize(model.get_nodes().size(), glm::mat4{1});
+
+    float curr_time_s = double(m_curr_time) / 1e6;
+
+    for (const auto& channel : channels) {
+        const auto& sampler = samplers[channel.get_sampler()];
+
+        auto input_accessor = accessors[sampler.get_input()];
+        auto output_accessor = accessors[sampler.get_output()];
+
+        if (m_curr_key >= input_accessor.get_count()) {
+            continue;
+        }
+
+        const auto* keys = (const float*) input_accessor.get_data(buffers.data(), buffers.size(), buffer_views.data(), buffer_views.size());
+        const auto* vals = output_accessor.get_data(buffers.data(), buffers.size(), buffer_views.data(), buffer_views.size());
+
+        assert(input_accessor.get_component_type() == component_type::float32);
+        assert(input_accessor.get_type() == accessor_type::scalar);
+
+        auto next_key = std::min(m_curr_key + 1, input_accessor.get_count() - 1);
+
+        if (curr_time_s > keys[next_key]) {
+            m_curr_key = next_key;
+            next_key = std::min(m_curr_key + 1, input_accessor.get_count() - 1);
+        }
+
+        if (m_curr_key == next_key) {
+            m_need_update = false;
+        }
+
+        auto cc = keys[m_curr_key];
+        auto nc = keys[next_key];
+
+        auto frame_duration = keys[next_key] - keys[m_curr_key];
+        float frame_progress{1};
+        if (frame_duration > 0) {
+            frame_progress = (curr_time_s - keys[m_curr_key]) / frame_duration;
+        }
+
+        auto v4_to_quat = [](const glm::vec4& v) {
+            return glm::quat{v.w, v.x, v.y, v.z};
+        };
+
+        switch (channel.get_path()) {
+            case animation_path::rotation:
+                assert(output_accessor.get_component_type() == component_type::float32);
+                assert(output_accessor.get_type() == accessor_type::vec4);
+
+                m_trs_transforms[channel.get_node()].first.rotation = interpolate_quat(
+                    v4_to_quat(reinterpret_cast<const glm::vec4*>(vals)[m_curr_key]),
+                    v4_to_quat(reinterpret_cast<const glm::vec4*>(vals)[next_key]),
+                    sampler.get_interpolation(),
+                    frame_progress);
+
+                m_trs_transforms[channel.get_node()].second = true;
+                break;
+            case animation_path::translation:
+                assert(output_accessor.get_component_type() == component_type::float32);
+                assert(output_accessor.get_type() == accessor_type::vec3);
+
+                m_trs_transforms[channel.get_node()].first.translation = interpolate_vec3(
+                    reinterpret_cast<const glm::vec3*>(vals)[m_curr_key],
+                    reinterpret_cast<const glm::vec3*>(vals)[next_key],
+                    sampler.get_interpolation(),
+                    frame_progress);
+                m_trs_transforms[channel.get_node()].second = true;
+                break;
+            case animation_path::scale:
+                assert(output_accessor.get_component_type() == component_type::float32);
+                assert(output_accessor.get_type() == accessor_type::vec3);
+
+                m_trs_transforms[channel.get_node()].first.scale = interpolate_vec3(
+                    reinterpret_cast<const glm::vec3*>(vals)[m_curr_key],
+                    reinterpret_cast<const glm::vec3*>(vals)[next_key],
+                    sampler.get_interpolation(),
+                    frame_progress);
+                m_trs_transforms[channel.get_node()].second = true;
+                break;
+            default:
+                throw std::runtime_error("Bad path.");
+        }
+    }
+
+    glm::mat4 parent_transform{1};
+    for_each_scene_node(
+        model,
+        [this](const gltf::node& node, int32_t node_index, const glm::mat4& parent_transform) {
+            if (m_trs_transforms[node_index].second) {
+                m_transformations[node_index] = parent_transform * node::gen_matrix(m_trs_transforms[node_index].first);
+                return m_transformations[node_index];
+            } else {
+                m_transformations[node_index] = parent_transform * node.get_matrix();
+                return m_transformations[node_index];
+            }
+        },
+        parent_transform);
+}
+
+
+glm::quat gltf::cpu_animation_controller::interpolate_quat(
+    const glm::quat& x, const glm::quat& y, gltf::animation_interpolation interpolation_type, float delta)
+{
+    if (interpolation_type != animation_interpolation::step && delta > 0) {
+        return glm::slerp(x, y, delta);
+    }
+    return x;
+}
+
+
+glm::vec3 gltf::cpu_animation_controller::interpolate_vec3(
+    const glm::vec3& x,
+    const glm::vec3& y,
+    gltf::animation_interpolation interpolation_type,
+    float delta)
+{
+    if (interpolation_type == animation_interpolation::linear && delta > 0) {
+        return glm::mix(x, y, delta);
+    } else if (interpolation_type == animation_interpolation::cubic_spline && delta > 0) {
+        return glm::smoothstep(x, y, glm::vec3{delta, delta, delta});
+    }
+
+    return x;
+}
+
+
+const std::vector<glm::mat4> gltf::cpu_animation_controller::get_transformations() const
+{
+    return m_transformations;
 }

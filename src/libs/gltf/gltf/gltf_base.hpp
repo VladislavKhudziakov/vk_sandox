@@ -241,6 +241,9 @@ namespace sandbox::gltf
     public:
         explicit animation(const nlohmann::json& animation_json);
 
+        const std::vector<animation_channel>& get_channels() const;
+        const std::vector<animation_sampler>& get_samplers() const;
+
     private:
         std::vector<animation_channel> m_channels{};
         std::vector<animation_sampler> m_samplers{};
@@ -256,6 +259,8 @@ namespace sandbox::gltf
             glm::vec3 scale{1, 1, 1};
             glm::vec3 translation{0, 0, 0};
         };
+
+        static glm::mat4 gen_matrix(const trs_transform&);
 
         explicit node(const nlohmann::json& node_json);
 
@@ -440,8 +445,8 @@ namespace sandbox::gltf
     {
         for (int32_t node : curr_nodes) {
             const auto& node_impl = all_nodes[node];
-            if constexpr (std::is_same_v<decltype(callback(all_nodes[node], std::forward<Args>(args)...)), void>) {
-                callback(all_nodes[node], std::forward<Args>(args)...);
+            if constexpr (std::is_same_v<decltype(callback(all_nodes[node], node, std::forward<Args>(args)...)), void>) {
+                callback(all_nodes[node], node, std::forward<Args>(args)...);
                 for_each_node_child(
                     node_impl.get_children(),
                     all_nodes,
@@ -451,7 +456,7 @@ namespace sandbox::gltf
                     node_impl.get_children(),
                     all_nodes,
                     callback,
-                    callback(all_nodes[node], std::forward<Args>(args)...));
+                    callback(all_nodes[node], node, std::forward<Args>(args)...));
             }
         }
     }

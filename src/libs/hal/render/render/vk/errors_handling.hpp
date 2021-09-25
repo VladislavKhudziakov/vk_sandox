@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <render/vk/vulkan_dependencies.hpp>
@@ -21,14 +20,6 @@ namespace sandbox::hal::render::avk
         vk::Result m_result;
         std::string m_error_message;
     };
-
-    struct vk_format_info
-    {
-        uint32_t size;
-        uint32_t channel_count;
-    };
-
-    vk_format_info get_format_info(VkFormat format);
 } // namespace sandbox::hal::render::avk
 
 #ifndef NDEBUG

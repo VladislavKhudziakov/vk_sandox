@@ -20,27 +20,33 @@ public:
     explicit test_sample_app(const std::string& gltf_file)
         : m_model(gltf::model::from_url(gltf_file))
     {
+        if (!m_model.get_animations().empty()) {
+            m_anim_controller.emplace(m_model.get_animations().front());
+            m_anim_controller->play();
+        }
     }
 
 
 protected:
-    void update(uint64_t uint64) override
+    void update(uint64_t dt) override
     {
-        if (m_reset_command_buffer) {
-            write_command_buffers();
+        if (m_anim_controller) {
+            m_anim_controller->update(m_model, dt);
         }
 
-        m_reset_command_buffer = false;
+        write_command_buffers();
 
         vk::Queue queue = avk::context::queue(vk::QueueFlagBits::eGraphics, 0);
+
         queue.submit(vk::SubmitInfo{
             .commandBufferCount = static_cast<uint32_t>(m_command_buffer->size()),
             .pCommandBuffers = m_command_buffer->data(),
             .signalSemaphoreCount = static_cast<uint32_t>(m_native_semaphores.size()),
             .pSignalSemaphores = m_native_semaphores.data(),
-        });
+        },
+        m_fences.back().as<vk::Fence>());
 
-        sample_app::update(uint64);
+        sample_app::update(dt);
     }
 
     void create_render_passes() override
@@ -119,11 +125,24 @@ protected:
     void create_sync_primitives() override
     {
         m_semaphores.emplace_back(avk::create_semaphore(avk::context::device()->createSemaphore({})));
+        m_fences.emplace_back(avk::create_fence(avk::context::device()->createFence({})));
         m_native_semaphores = avk::to_elements_list<vk::Semaphore>(m_semaphores.begin(), m_semaphores.end());
+        m_native_fences = avk::to_elements_list<vk::Fence>(m_fences.begin(), m_fences.end());
     }
 
     void init_assets() override
     {
+        m_command_pool = avk::create_command_pool(
+            avk::context::device()->createCommandPool(vk::CommandPoolCreateInfo{
+                .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+                .queueFamilyIndex = avk::context::queue_family(vk::QueueFlagBits::eGraphics),
+                }));
+
+        m_command_buffer = avk::allocate_command_buffers(vk::CommandBufferAllocateInfo{
+            .commandPool = m_command_pool,
+            .commandBufferCount = 1,
+        });
+
         avk::command_pool pool = avk::create_command_pool(
             avk::context::device()->createCommandPool(vk::CommandPoolCreateInfo{
                 .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -143,6 +162,10 @@ protected:
 
         m_geometry = gltf::vk_geometry::from_gltf_model(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
         m_texture_atlas = gltf::vk_texture_atlas::from_gltf_model(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
+        m_skins = gltf::vk_geometry_skins::from_gltf_model(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
+
+        auto transforms_buffer_size = m_model.get_meshes().size() * sizeof(gltf::instance_transform_data);
+        auto [uniform_staging_buffer, uniform_buffer] = avk::gen_buffer(curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics), transforms_buffer_size, vk::BufferUsageFlagBits::eUniformBuffer);
 
         curr_buffer.end();
 
@@ -157,6 +180,9 @@ protected:
                 .pCommandBuffers = resources_buffer->data(),
             },
             fence);
+
+        m_uniform_staging_buffer = std::move(uniform_staging_buffer);
+        m_uniform_buffer = std::move(uniform_buffer);
 
         init_pipelines();
 
@@ -175,8 +201,7 @@ protected:
 
     const std::vector<vk::Fence>& get_wait_fences() override
     {
-        static std::vector<vk::Fence> empty{};
-        return empty;
+        return m_native_fences;
     }
 
 private:
@@ -216,7 +241,7 @@ private:
             create_shader(m_fragment_shader, "./resources/test.frag.spv");
         }
 
-        sandbox::gltf::for_each_scene_node(m_model, [this](const gltf::node& node) {
+        sandbox::gltf::for_each_scene_node(m_model, [this](const gltf::node& node, int32_t /*node*/) {
             if (node.get_mesh() < 0) {
                 return;
             }
@@ -240,12 +265,17 @@ private:
                     curr_pipeline_data.descriptor_layouts.emplace_back(gltf::create_material_textures_layout(materials[primitive.get_material()]));
                 }
 
+                curr_pipeline_data.descriptor_layouts.emplace_back(gltf::create_primitive_uniforms_layout(*curr_vk_primitive));
+
                 auto descriptor_set_layouts = avk::to_elements_list<vk::DescriptorSetLayout>(
                     curr_pipeline_data.descriptor_layouts.begin(), curr_pipeline_data.descriptor_layouts.end());
 
                 auto [pool, sets] = avk::gen_descriptor_sets(
                     descriptor_set_layouts,
-                    {{1, vk::DescriptorType::eCombinedImageSampler}});
+                    {
+                        {materials[primitive.get_material()].get_textures_count(), vk::DescriptorType::eCombinedImageSampler},
+                        {3, vk::DescriptorType::eUniformBuffer}
+                    });
 
                 curr_pipeline_data.pool = std::move(pool);
                 curr_pipeline_data.descriptors = std::move(sets);
@@ -255,11 +285,17 @@ private:
                     curr_pipeline_data.descriptors->at(0),
                     m_texture_atlas);
 
+                gltf::write_node_uniforms_descriptors(
+                    node,
+                    curr_pipeline_data.descriptors->at(1),
+                    m_uniform_buffer.as<vk::Buffer>(),
+                    m_skins);
+
                 curr_pipeline_data.layout = avk::gen_pipeline_layout(
                     {vk::PushConstantRange{
                         .stageFlags = vk::ShaderStageFlagBits::eVertex,
                         .offset = 0,
-                        .size = sizeof(glm::mat4)}},
+                        .size = sizeof(uint32_t)}},
                     descriptor_set_layouts);
 
                 curr_pipeline_data.pipeline = gltf::create_pipeline_from_primitive(
@@ -268,7 +304,17 @@ private:
                      {m_fragment_shader, vk::ShaderStageFlagBits::eFragment}},
                     curr_pipeline_data.layout,
                     m_pass.get_native_pass(),
-                    0);
+                    0,
+                    gltf::pipeline_primitive_topology::triangles,
+                    gltf::pipeline_blend_mode::none,
+                    false,
+                    true,
+                    true,
+                    true,
+                    true,
+                    false,
+                    m_skins.get_hierarchy_transforms().size(),
+                    1);
 
                 m_models_primitives_pipelines[node.get_mesh()].emplace_back(std::move(curr_pipeline_data));
                 curr_vk_primitive++;
@@ -279,30 +325,10 @@ private:
 
     void write_command_buffers()
     {
-        if (!m_command_pool) {
-            m_command_pool = avk::create_command_pool(
-                avk::context::device()->createCommandPool(vk::CommandPoolCreateInfo{
-                    .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-                    .queueFamilyIndex = avk::context::queue_family(vk::QueueFlagBits::eGraphics),
-                }));
-
-            m_command_buffer = avk::allocate_command_buffers(vk::CommandBufferAllocateInfo{
-                .commandPool = m_command_pool,
-                .commandBufferCount = 1,
-            });
-        }
-
         auto& curr_camera = m_model.get_cameras().back();
 
-        struct instance_transform_data
-        {
-            glm::mat4 model;
-            glm::mat4 view;
-            glm::mat4 proj;
-            glm::mat4 mvp;
-        };
-
-        std::unordered_map<int32_t, instance_transform_data> models_transforms;
+        std::vector<gltf::instance_transform_data> instance_transforms{};
+        instance_transforms.reserve(m_model.get_meshes().size());
 
         auto view_matrix = glm::lookAt(glm::vec3{3, 3, 3}, glm::vec3{0, 0, 0}, glm::vec3{0, 1, 0});
 
@@ -310,30 +336,47 @@ private:
 
         auto proj_matrix = curr_camera.calculate_projection(float(fb_width) / float(fb_height));
 
-        sandbox::gltf::for_each_scene_node(
-            m_model,
-            [&proj_matrix, &view_matrix, &models_transforms, fb_width = fb_width, fb_height = fb_height](const gltf::node& node, const glm::mat4& parent_transform) {
-                auto local_transform = node.get_matrix();
 
-                auto world_transform = parent_transform * local_transform;
-
-                if (node.get_mesh() >= 0) {
-                    models_transforms[node.get_mesh()] = {
-                        .model = world_transform,
-                        .view = view_matrix,
-                        .proj = proj_matrix,
-                        .mvp = proj_matrix * view_matrix * world_transform};
-                }
-
-                return world_transform;
-            },
-            glm::mat4{1});
+        for (const auto& mesh : m_model.get_meshes()) {
+            instance_transforms.emplace_back(gltf::instance_transform_data {
+                .view = view_matrix,
+                .proj = proj_matrix,
+                .mvp = proj_matrix * view_matrix
+            });
+        }
 
         vk::CommandBuffer& command_buffer = m_command_buffer->front();
         command_buffer.reset();
 
         command_buffer.begin(vk::CommandBufferBeginInfo{
             .flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse});
+
+        avk::upload_buffer_data(
+            command_buffer,
+            m_uniform_staging_buffer,
+            m_uniform_buffer,
+            vk::PipelineStageFlagBits::eVertexShader,
+            vk::AccessFlagBits::eUniformRead,
+            instance_transforms.size() * sizeof(instance_transforms.front()),
+            [&instance_transforms](const uint8_t* dst){
+                std::memcpy((void*)dst, instance_transforms.data(), instance_transforms.size() * sizeof(instance_transforms.front()));
+            });
+
+        if (m_anim_controller) {
+            avk::upload_buffer_data(
+                command_buffer,
+                m_skins.get_hierarchy_staging_buffer(),
+                m_skins.get_hierarchy_buffer(),
+                vk::PipelineStageFlagBits::eVertexShader,
+                vk::AccessFlagBits::eUniformRead,
+                m_anim_controller->get_transformations().size() * sizeof(m_anim_controller->get_transformations().front()),
+                [this](const uint8_t* dst){
+                    std::memcpy(
+                        (void*)dst,
+                        m_anim_controller->get_transformations().data(),
+                        m_anim_controller->get_transformations().size() * sizeof(m_anim_controller->get_transformations().front()));
+                });
+        }
 
         command_buffer.setViewport(
             0,
@@ -377,21 +420,20 @@ private:
             },
             vk::SubpassContents::eInline);
 
-        for_each_scene_node(m_model, [this, &models_transforms, &command_buffer](const gltf::node& node) {
+        for_each_scene_node(m_model, [this, &instance_transforms, &command_buffer](const gltf::node& node, int32_t node_index) {
             if (node.get_mesh() < 0) {
                 return;
             }
 
             auto curr_pipeline = m_models_primitives_pipelines[node.get_mesh()].begin();
+            command_buffer.pushConstants(
+                curr_pipeline->layout,
+                vk::ShaderStageFlagBits::eVertex,
+                0,
+                sizeof(uint32_t),
+                &node_index);
 
             for (const auto& primitive : m_geometry.get_primitives(node.get_mesh())) {
-                command_buffer.pushConstants(
-                    curr_pipeline->layout,
-                    vk::ShaderStageFlagBits::eVertex,
-                    0,
-                    sizeof(glm::mat4),
-                    glm::value_ptr(models_transforms[node.get_mesh()].mvp));
-
                 command_buffer.bindDescriptorSets(
                     vk::PipelineBindPoint::eGraphics,
                     curr_pipeline->layout,
@@ -414,6 +456,7 @@ private:
     gltf::model m_model{};
     gltf::vk_geometry m_geometry{};
     gltf::vk_texture_atlas m_texture_atlas{};
+    gltf::vk_geometry_skins m_skins{};
 
     avk::render_pass_wrapper m_pass{};
 
@@ -423,6 +466,8 @@ private:
 
     std::vector<avk::semaphore> m_semaphores{};
     std::vector<vk::Semaphore> m_native_semaphores{};
+    std::vector<avk::fence> m_fences{};
+    std::vector<vk::Fence> m_native_fences{};
 
     avk::command_pool m_command_pool{};
     avk::command_buffer_list m_command_buffer{};
@@ -432,13 +477,18 @@ private:
 
     std::unordered_map<int32_t, std::vector<pipeline_data>> m_models_primitives_pipelines{};
 
+    std::optional<gltf::cpu_animation_controller> m_anim_controller{};
+
+    avk::vma_buffer m_uniform_staging_buffer{};
+    avk::vma_buffer m_uniform_buffer{};
+
     bool m_reset_command_buffer = false;
 };
 
 
 int main(int argv, const char** argc)
 {
-    test_sample_app app{"D:\\dev\\glTF-Sample-Models\\2.0\\BoxTexturedNonPowerOfTwo\\glTF\\BoxTexturedNonPowerOfTwo.gltf"};
+    test_sample_app app{"D:\\dev\\glTF-Sample-Models\\2.0\\AnimatedCube\\glTF\\AnimatedCube.gltf"};
     app.main_loop();
 
     return 0;

@@ -245,9 +245,9 @@ namespace sandbox::gltf
 
     struct animation_interpolation_value
     {
-        constexpr static auto ANIMATION_INTERPOLATION_LINEAR = "linear";
-        constexpr static auto ANIMATION_INTERPOLATION_STEP = "step";
-        constexpr static auto ANIMATION_INTERPOLATION_CUBIC_SPLINE = "cubic_spline";
+        constexpr static auto ANIMATION_INTERPOLATION_LINEAR = "LINEAR";
+        constexpr static auto ANIMATION_INTERPOLATION_STEP = "STEP";
+        constexpr static auto ANIMATION_INTERPOLATION_CUBIC_SPLINE = "CUBIC_SPLINE";
 
         animation_interpolation_value() = default;
         animation_interpolation_value(const char* value);

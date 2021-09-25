@@ -157,13 +157,19 @@ glm::mat4 node::get_matrix() const
     if (const auto* matrix = std::get_if<glm::mat4>(&m_transform_data); matrix != nullptr) {
         return *matrix;
     } else {
-        auto trs = std::get<trs_transform>(m_transform_data);
-        glm::mat4 result{1};
-        result = glm::translate(result, trs.translation);
-        result *= glm::mat4_cast(trs.rotation);
-        result = glm::scale(result, trs.scale);
-        return result;
+        return gen_matrix(std::get<trs_transform>(m_transform_data));
     }
+}
+
+
+glm::mat4 node::gen_matrix(const node::trs_transform& trs)
+{
+    glm::mat4 result{1};
+    result = glm::translate(result, trs.translation);
+    result *= glm::mat4_cast(trs.rotation);
+    result = glm::scale(result, trs.scale);
+
+    return result;
 }
 
 
@@ -618,10 +624,22 @@ animation::animation(const nlohmann::json& animation_json)
 }
 
 
+const std::vector<animation_channel>& animation::get_channels() const
+{
+    return m_channels;
+}
+
+
+const std::vector<animation_sampler>& animation::get_samplers() const
+{
+    return m_samplers;
+}
+
+
 animation_channel::animation_channel(const nlohmann::json& animation_channel_json)
     : m_sampler(extract_json_data<uint64_t>(animation_channel_json, "sampler"))
-    , m_node(extract_json_data<uint64_t>(animation_channel_json, "node"))
-    , m_path(extract_json_data<std::string>(animation_channel_json, "path"))
+    , m_node(animation_channel_json["target"]["node"])
+    , m_path(animation_channel_json["target"]["path"])
 {
 }
 
@@ -789,7 +807,7 @@ model::model(const nlohmann::json& gltf_json, const std::string& cwd, std::optio
     do_if_found(gltf_json, "animations", [this](const json& animations) {
         m_animations.reserve(animations.size());
         for (const auto& animation : animations) {
-            m_samplers.emplace_back(animation);
+            m_animations.emplace_back(animation);
         }
     });
 

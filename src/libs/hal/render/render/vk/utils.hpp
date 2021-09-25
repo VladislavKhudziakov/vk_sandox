@@ -78,23 +78,28 @@ namespace sandbox::hal::render::avk
     avk::descriptor_set_layout gen_descriptor_set_layout(
         uint32_t count, vk::DescriptorType type);
 
+
     std::pair<avk::descriptor_pool, avk::descriptor_set_list> gen_descriptor_sets(
         const std::vector<vk::DescriptorSetLayout>& layouts,
         const std::vector<std::pair<uint32_t, vk::DescriptorType>>& layouts_data);
+
 
     void write_texture_descriptors(
         vk::DescriptorSet dst_set,
         const std::vector<vk::ImageView>&,
         const std::vector<vk::Sampler>&);
 
+
     void write_buffer_descriptors(
         vk::DescriptorSet dst_set,
         const std::vector<vk::Buffer>&,
         const std::vector<std::pair<VkDeviceSize, VkDeviceSize>>& offsets_ranges);
 
+
     avk::pipeline_layout gen_pipeline_layout(
         const std::vector<vk::PushConstantRange>&,
         const std::vector<vk::DescriptorSetLayout>&);
+
 
     std::pair<avk::vma_image, avk::image_view> gen_texture(
         uint32_t queue_family,
@@ -106,6 +111,7 @@ namespace sandbox::hal::render::avk
         uint32_t levels = 1,
         uint32_t layers = 1);
 
+
     avk::sampler gen_sampler(
         vk::Filter min_filter,
         vk::Filter mag_filter,
@@ -116,6 +122,7 @@ namespace sandbox::hal::render::avk
         float max_lod,
         bool anisotropy = false);
 
+
     void copy_buffer_to_image(
         vk::CommandBuffer command_buffer,
         const vk::Buffer& staging_buffer,
@@ -125,6 +132,35 @@ namespace sandbox::hal::render::avk
         uint32_t image_level_count,
         uint32_t image_layers_count,
         size_t buffer_offset = 0);
+
+
+    std::pair<avk::vma_buffer, avk::vma_buffer> gen_buffer(
+        vk::CommandBuffer& command_buffer,
+        uint32_t queue_family,
+        uint32_t buffer_size,
+        vk::BufferUsageFlagBits buffer_usage,
+        vk::PipelineStageFlagBits wait_stage = {},
+        vk::AccessFlagBits access_flags = {},
+        const std::function<void(const uint8_t* dst)>& on_mapped_callback = {});
+
+
+    void upload_buffer_data(
+        vk::CommandBuffer& command_buffer,
+        const avk::vma_buffer& staging_buffer,
+        const avk::vma_buffer& dst_buffer,
+        vk::PipelineStageFlagBits dst_stage,
+        vk::AccessFlagBits dst_access,
+        VkDeviceSize size,
+        const std::function<void(const uint8_t* dst)>& upload);
+
+
+    struct vk_format_info
+    {
+        uint32_t size;
+        uint32_t channel_count;
+    };
+
+    vk_format_info get_format_info(VkFormat format);
 
 
     struct pass_create_info
