@@ -486,16 +486,12 @@ void gltf::write_node_uniforms_descriptors(
 
     avk::write_buffer_descriptors(
         dst_set,
-        {
-            instance_data_buffer,
-            geom_skins.get_hierarchy_buffer().as<vk::Buffer>(),
-            geom_skins.get_skin_buffer().as<vk::Buffer>()
-        },
-        {
-            {node.get_mesh() * sizeof(instance_transform_data), sizeof(instance_transform_data)},
-            {0, geom_skins.get_hierarchy_transforms().size() * sizeof(geom_skins.get_hierarchy_transforms().front())},
-            {skin.offset, skin.size}
-        });
+        {instance_data_buffer,
+         geom_skins.get_hierarchy_buffer().as<vk::Buffer>(),
+         geom_skins.get_skin_buffer().as<vk::Buffer>()},
+        {{node.get_mesh() * sizeof(instance_transform_data), sizeof(instance_transform_data)},
+         {0, geom_skins.get_hierarchy_transforms().size() * sizeof(geom_skins.get_hierarchy_transforms().front())},
+         {skin.offset, skin.size}});
 }
 
 

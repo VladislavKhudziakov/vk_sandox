@@ -159,64 +159,64 @@ namespace sandbox::gltf
         std::vector<hal::render::avk::vma_buffer> m_staging_resources{};
     };
 
-//    class vk_pipeline
-//    {
-//    public:
-//        vk_pipeline(const vk_pipeline&) = delete;
-//        vk_pipeline& operator=(const vk_pipeline&) = delete;
-//        vk_pipeline(vk_pipeline&&) noexcept = default;
-//        vk_pipeline& operator=(vk_pipeline&&) noexcept = default;
-//
-//        void bind(vk::CommandBuffer& command_buffer, const std::vector<VkDeviceSize>& dyn_offsets);
-//
-//        vk::Pipeline get_pipeline() const;
-//        vk::DescriptorPool get_descriptor_pool() const;
-//        vk::PipelineLayout get_pipeline_layout() const;
-//        const vk::DescriptorSet* get_descriptor_sets(uint32_t&) const;
-//
-//    private:
-//        vk_pipeline() = default;
-//
-//        friend class vk_pipeline_builder;
-//
-//        hal::render::avk::descriptor_pool m_descriptor_pool{};
-//        hal::render::avk::descriptor_set_list m_descriptor_set{};
-//        hal::render::avk::pipeline_layout m_layouts{};
-//        hal::render::avk::graphics_pipeline m_pipeline_handler{};
-//        std::vector<VkDeviceSize> m_dyn_offsets{};
-//    };
-//
-//
-//    class vk_pipeline_builder
-//    {
-//    public:
-//        vk_pipeline_builder(
-//            const vk_primitive& primitive,
-//            vk::RenderPass pass,
-//            uint32_t subpass);
-//
-//        vk_pipeline_builder& set_shaders(const std::vector<vk::ShaderModule>&);
-//        vk_pipeline_builder& use_hierarchy(bool);
-//        vk_pipeline_builder& use_skinning(bool);
-//        vk_pipeline_builder& use_back_faces(bool);
-//        vk_pipeline_builder& enable_z_write(bool);
-//        vk_pipeline_builder& enable_z_test(bool);
-//        vk_pipeline_builder& enable_color_write(bool);
-//        vk_pipeline_builder& set_polygon_mode(vk::PolygonMode);
-//        vk_pipeline_builder& set_samples_count(vk::SampleCountFlagBits);
-//        vk_pipeline_builder& add_textures_descriptors(const gltf::material& material, const vk_texture_atlas&);
-//        vk_pipeline_builder& add_textures_descriptors(const std::vector<vk::ImageView>&);
-//        vk_pipeline_builder& add_buffer_descriptors(const gltf::node&, const vk_geometry&);
-//        vk_pipeline_builder& add_constant_data(uint8_t* data, size_t size);
-//
-//        vk_pipeline_builder& add_buffer_descriptors(
-//            const std::vector<vk::Buffer>&,
-//            const std::vector<std::pair<VkDeviceSize, VkDeviceSize>>&,
-//            vk::DescriptorType);
-//
-//        vk_pipeline generate_pipeline();
-//    private:
-//        vk::RenderPass m_pass;
-//        uint32_t m_subpass;
-//    };
+    //    class vk_pipeline
+    //    {
+    //    public:
+    //        vk_pipeline(const vk_pipeline&) = delete;
+    //        vk_pipeline& operator=(const vk_pipeline&) = delete;
+    //        vk_pipeline(vk_pipeline&&) noexcept = default;
+    //        vk_pipeline& operator=(vk_pipeline&&) noexcept = default;
+    //
+    //        void bind(vk::CommandBuffer& command_buffer, const std::vector<VkDeviceSize>& dyn_offsets);
+    //
+    //        vk::Pipeline get_pipeline() const;
+    //        vk::DescriptorPool get_descriptor_pool() const;
+    //        vk::PipelineLayout get_pipeline_layout() const;
+    //        const vk::DescriptorSet* get_descriptor_sets(uint32_t&) const;
+    //
+    //    private:
+    //        vk_pipeline() = default;
+    //
+    //        friend class vk_pipeline_builder;
+    //
+    //        hal::render::avk::descriptor_pool m_descriptor_pool{};
+    //        hal::render::avk::descriptor_set_list m_descriptor_set{};
+    //        hal::render::avk::pipeline_layout m_layouts{};
+    //        hal::render::avk::graphics_pipeline m_pipeline_handler{};
+    //        std::vector<VkDeviceSize> m_dyn_offsets{};
+    //    };
+    //
+    //
+    //    class vk_pipeline_builder
+    //    {
+    //    public:
+    //        vk_pipeline_builder(
+    //            const vk_primitive& primitive,
+    //            vk::RenderPass pass,
+    //            uint32_t subpass);
+    //
+    //        vk_pipeline_builder& set_shaders(const std::vector<vk::ShaderModule>&);
+    //        vk_pipeline_builder& use_hierarchy(bool);
+    //        vk_pipeline_builder& use_skinning(bool);
+    //        vk_pipeline_builder& use_back_faces(bool);
+    //        vk_pipeline_builder& enable_z_write(bool);
+    //        vk_pipeline_builder& enable_z_test(bool);
+    //        vk_pipeline_builder& enable_color_write(bool);
+    //        vk_pipeline_builder& set_polygon_mode(vk::PolygonMode);
+    //        vk_pipeline_builder& set_samples_count(vk::SampleCountFlagBits);
+    //        vk_pipeline_builder& add_textures_descriptors(const gltf::material& material, const vk_texture_atlas&);
+    //        vk_pipeline_builder& add_textures_descriptors(const std::vector<vk::ImageView>&);
+    //        vk_pipeline_builder& add_buffer_descriptors(const gltf::node&, const vk_geometry&);
+    //        vk_pipeline_builder& add_constant_data(uint8_t* data, size_t size);
+    //
+    //        vk_pipeline_builder& add_buffer_descriptors(
+    //            const std::vector<vk::Buffer>&,
+    //            const std::vector<std::pair<VkDeviceSize, VkDeviceSize>>&,
+    //            vk::DescriptorType);
+    //
+    //        vk_pipeline generate_pipeline();
+    //    private:
+    //        vk::RenderPass m_pass;
+    //        uint32_t m_subpass;
+    //    };
 } // namespace sandbox::gltf

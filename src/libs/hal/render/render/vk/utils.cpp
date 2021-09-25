@@ -818,7 +818,7 @@ std::pair<avk::vma_buffer, avk::vma_buffer> avk::gen_buffer(
             .sharingMode = vk::SharingMode::eExclusive,
             .queueFamilyIndexCount = 1,
             .pQueueFamilyIndices = &queue_family},
-            VmaAllocationCreateInfo{
+        VmaAllocationCreateInfo{
             .usage = VMA_MEMORY_USAGE_GPU_ONLY});
 
     if (on_mapped_callback) {
@@ -829,7 +829,7 @@ std::pair<avk::vma_buffer, avk::vma_buffer> avk::gen_buffer(
                 .srcOffset = 0,
                 .dstOffset = 0,
                 .size = buffer_size,
-                }});
+            }});
 
         command_buffer.pipelineBarrier(
             vk::PipelineStageFlagBits::eTransfer,
@@ -838,9 +838,9 @@ std::pair<avk::vma_buffer, avk::vma_buffer> avk::gen_buffer(
             {vk::MemoryBarrier{
                 .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
                 .dstAccessMask = access_flags,
-                }},
-                {},
-                {});
+            }},
+            {},
+            {});
     }
 
     return std::make_pair(std::move(staging_buffer), std::move(result_buffer));

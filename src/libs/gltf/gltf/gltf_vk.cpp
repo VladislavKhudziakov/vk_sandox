@@ -153,7 +153,7 @@ void gltf::vk_geometry::create_meshes_data(
                                 buffers.size(),
                                 buffer_views.data(),
                                 buffer_views.size()),
-                                accessor.get_data_size());
+                            accessor.get_data_size());
                         vk_attr++;
                     }
                     vk_primitive++;
@@ -184,7 +184,7 @@ void gltf::vk_geometry::create_meshes_data(
                                     buffers.size(),
                                     buffer_views.data(),
                                     buffer_views.size()),
-                                    accessor.get_data_size());
+                                accessor.get_data_size());
                         }
                     }
                     vk_primitive++;
@@ -340,7 +340,8 @@ gltf::vk_geometry_skins gltf::vk_geometry_skins::from_gltf_model(
         new_skins.m_skins,
         new_skins.m_skin_staging_buffer,
         new_skins.m_skin_buffer,
-        command_buffer, queue_family);
+        command_buffer,
+        queue_family);
 
     create_hierarchy_data(
         mdl,
@@ -388,16 +389,14 @@ void gltf::vk_geometry_skins::create_skins_data(
         for (const auto joint : joints) {
             new_bones_data.emplace_back(bone_data{
                 .inv_bind_pose = *inv_bind_poses++,
-                .joint = static_cast<uint32_t>(joint)
-            });
+                .joint = static_cast<uint32_t>(joint)});
         }
 
         const auto skin_data_size = new_bones_data.size() * sizeof(new_bones_data.front());
 
         skins.emplace_back(vk_skin{
             .offset = skins_buffer_size,
-            .size = skin_data_size
-        });
+            .size = skin_data_size});
 
         skins_buffer_size += skin_data_size;
     }
@@ -405,8 +404,7 @@ void gltf::vk_geometry_skins::create_skins_data(
     bones_data.emplace_back();
     skins.emplace_back(vk_skin{
         .offset = skins_buffer_size,
-        .size = sizeof(bone_data)
-    });
+        .size = sizeof(bone_data)});
 
     auto [staging_buffer, dst_buffer] = avk::gen_buffer(
         command_buffer,
@@ -415,9 +413,9 @@ void gltf::vk_geometry_skins::create_skins_data(
         vk::BufferUsageFlagBits::eUniformBuffer,
         vk::PipelineStageFlagBits::eVertexShader,
         vk::AccessFlagBits::eUniformRead,
-        [&](const uint8_t* dst){
+        [&](const uint8_t* dst) {
             for (const auto& skin : skins) {
-                std::memcpy((void*)(dst + skin.offset), bones_data.data(), skin.size);
+                std::memcpy((void*) (dst + skin.offset), bones_data.data(), skin.size);
             }
         });
 
@@ -444,8 +442,8 @@ void gltf::vk_geometry_skins::create_hierarchy_data(
         [&default_data](const gltf::node& node, int32_t node_index, const glm::mat4& parent_transform) {
             default_data[node_index] = parent_transform * node.get_matrix();
             return default_data[node_index];
-            },
-            parent_transform);
+        },
+        parent_transform);
 
     auto [staging_buffer, dst_buffer] = avk::gen_buffer(
         command_buffer,
@@ -454,8 +452,8 @@ void gltf::vk_geometry_skins::create_hierarchy_data(
         vk::BufferUsageFlagBits::eUniformBuffer,
         vk::PipelineStageFlagBits::eVertexShader,
         vk::AccessFlagBits::eUniformRead,
-        [&](const uint8_t* dst){
-            std::memcpy((void*)dst, default_data.data(), default_data.size() * sizeof(default_data.front()));
+        [&](const uint8_t* dst) {
+            std::memcpy((void*) dst, default_data.data(), default_data.size() * sizeof(default_data.front()));
         });
 
     result_staging_buffer = std::move(staging_buffer);

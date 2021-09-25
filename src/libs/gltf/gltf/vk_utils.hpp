@@ -88,23 +88,23 @@ namespace sandbox::gltf
     create_material_textures_layout(const gltf::material& material);
 
     sandbox::hal::render::avk::descriptor_set_layout
-        create_primitive_uniforms_layout(
-            const gltf::vk_primitive& primitive);
+    create_primitive_uniforms_layout(
+        const gltf::vk_primitive& primitive);
 
     void write_material_textures_descriptors(
         const gltf::material& material,
         vk::DescriptorSet dst_set,
         const gltf::vk_texture_atlas& tex_atlas);
 
-   void write_node_uniforms_descriptors(
+    void write_node_uniforms_descriptors(
         const gltf::node& node,
         vk::DescriptorSet dst_set,
         vk::Buffer instance_data_buffer,
         const gltf::vk_geometry_skins& geometry);
 
 
-   struct vk_material_info
-   {
+    struct vk_material_info
+    {
         vk_material_info static from_gltf_material(const gltf::material&);
 
         glm::vec4 base_color{1, 1, 1, 1};
@@ -123,8 +123,8 @@ namespace sandbox::gltf
         alignas(sizeof(float) * 4) float alpha_cutoff{0.5};
 
         alignas(sizeof(float) * 4) int32_t double_sided{0};
-   };
+    };
 
-   static_assert(std::is_same_v<glm::vec4::value_type, float>);
-   static_assert(sizeof(vk_material_info) == sizeof(float) * 4 * 12);
+    static_assert(std::is_same_v<glm::vec4::value_type, float>);
+    static_assert(sizeof(vk_material_info) == sizeof(float) * 4 * 12);
 } // namespace sandbox::gltf

@@ -39,12 +39,12 @@ protected:
         vk::Queue queue = avk::context::queue(vk::QueueFlagBits::eGraphics, 0);
 
         queue.submit(vk::SubmitInfo{
-            .commandBufferCount = static_cast<uint32_t>(m_command_buffer->size()),
-            .pCommandBuffers = m_command_buffer->data(),
-            .signalSemaphoreCount = static_cast<uint32_t>(m_native_semaphores.size()),
-            .pSignalSemaphores = m_native_semaphores.data(),
-        },
-        m_fences.back().as<vk::Fence>());
+                         .commandBufferCount = static_cast<uint32_t>(m_command_buffer->size()),
+                         .pCommandBuffers = m_command_buffer->data(),
+                         .signalSemaphoreCount = static_cast<uint32_t>(m_native_semaphores.size()),
+                         .pSignalSemaphores = m_native_semaphores.data(),
+                     },
+                     m_fences.back().as<vk::Fence>());
 
         sample_app::update(dt);
     }
@@ -136,7 +136,7 @@ protected:
             avk::context::device()->createCommandPool(vk::CommandPoolCreateInfo{
                 .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
                 .queueFamilyIndex = avk::context::queue_family(vk::QueueFlagBits::eGraphics),
-                }));
+            }));
 
         m_command_buffer = avk::allocate_command_buffers(vk::CommandBufferAllocateInfo{
             .commandPool = m_command_pool,
@@ -272,10 +272,8 @@ private:
 
                 auto [pool, sets] = avk::gen_descriptor_sets(
                     descriptor_set_layouts,
-                    {
-                        {materials[primitive.get_material()].get_textures_count(), vk::DescriptorType::eCombinedImageSampler},
-                        {3, vk::DescriptorType::eUniformBuffer}
-                    });
+                    {{materials[primitive.get_material()].get_textures_count(), vk::DescriptorType::eCombinedImageSampler},
+                     {3, vk::DescriptorType::eUniformBuffer}});
 
                 curr_pipeline_data.pool = std::move(pool);
                 curr_pipeline_data.descriptors = std::move(sets);
@@ -338,11 +336,10 @@ private:
 
 
         for (const auto& mesh : m_model.get_meshes()) {
-            instance_transforms.emplace_back(gltf::instance_transform_data {
+            instance_transforms.emplace_back(gltf::instance_transform_data{
                 .view = view_matrix,
                 .proj = proj_matrix,
-                .mvp = proj_matrix * view_matrix
-            });
+                .mvp = proj_matrix * view_matrix});
         }
 
         vk::CommandBuffer& command_buffer = m_command_buffer->front();
@@ -358,8 +355,8 @@ private:
             vk::PipelineStageFlagBits::eVertexShader,
             vk::AccessFlagBits::eUniformRead,
             instance_transforms.size() * sizeof(instance_transforms.front()),
-            [&instance_transforms](const uint8_t* dst){
-                std::memcpy((void*)dst, instance_transforms.data(), instance_transforms.size() * sizeof(instance_transforms.front()));
+            [&instance_transforms](const uint8_t* dst) {
+                std::memcpy((void*) dst, instance_transforms.data(), instance_transforms.size() * sizeof(instance_transforms.front()));
             });
 
         if (m_anim_controller) {
@@ -370,9 +367,9 @@ private:
                 vk::PipelineStageFlagBits::eVertexShader,
                 vk::AccessFlagBits::eUniformRead,
                 m_anim_controller->get_transformations().size() * sizeof(m_anim_controller->get_transformations().front()),
-                [this](const uint8_t* dst){
+                [this](const uint8_t* dst) {
                     std::memcpy(
-                        (void*)dst,
+                        (void*) dst,
                         m_anim_controller->get_transformations().data(),
                         m_anim_controller->get_transformations().size() * sizeof(m_anim_controller->get_transformations().front()));
                 });
