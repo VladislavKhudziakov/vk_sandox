@@ -941,3 +941,373 @@ vk::RenderPass avk::render_pass_wrapper::get_native_pass() const
 {
     return m_pass_handler.as<vk::RenderPass>();
 }
+
+
+avk::graphics_pipeline_builder::graphics_pipeline_builder(
+    vk::RenderPass pass,
+    uint32_t subpass,
+    size_t attachments_count)
+    : m_pass(pass)
+    , m_subpass(subpass)
+{
+    m_attachments_blend_states.resize(
+        attachments_count, vk::PipelineColorBlendAttachmentState{
+            .blendEnable = VK_FALSE,
+            .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |vk::ColorComponentFlagBits::eB |vk::ColorComponentFlagBits::eA
+       });
+
+    m_color_blend_state.pAttachments = m_attachments_blend_states.data();
+    m_color_blend_state.attachmentCount = m_attachments_blend_states.size();
+}
+
+
+avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::set_vertex_format(
+    const std::vector<vk::VertexInputAttributeDescription>& attrs, const std::vector<vk::VertexInputBindingDescription>& bingings)
+{
+    m_vertex_attributes = attrs;
+    m_vertex_bingings = bingings;
+    m_vertex_input_state = vk::PipelineVertexInputStateCreateInfo{
+        .flags = {},
+        .vertexBindingDescriptionCount = static_cast<uint32_t>(m_vertex_bingings.size()),
+        .pVertexBindingDescriptions = m_vertex_bingings.data(),
+        .vertexAttributeDescriptionCount = static_cast<uint32_t>(m_vertex_attributes.size()),
+        .pVertexAttributeDescriptions = m_vertex_attributes.data()
+    };
+
+    return *this;
+}
+
+
+avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::set_shader_stages(
+    const std::vector<std::pair<vk::ShaderModule, vk::ShaderStageFlagBits>>& stages_list)
+{
+    m_shader_stages.clear();
+    m_shader_stages.reserve(stages_list.size());
+
+    for (const auto& [module, stage] : stages_list){
+        m_shader_stages.emplace_back(vk::PipelineShaderStageCreateInfo{
+            .flags = {},
+            .stage = stage,
+            .module = module,
+            .pName = "main",
+            .pSpecializationInfo = &m_specialization_info,
+        });
+    }
+
+    return *this;
+}
+
+
+
+avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::set_primitive_topology(vk::PrimitiveTopology topology)
+{
+    m_input_assembly_state.topology = topology;
+    return *this;
+}
+
+
+avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::set_cull_mode(vk::CullModeFlags cull_mode)
+{
+    m_rasterization_state.cullMode = cull_mode;
+    return *this;
+}
+
+
+avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::set_polygon_mode(vk::PolygonMode polygon_mode)
+{
+    m_rasterization_state.polygonMode = polygon_mode;
+    return *this;
+}
+
+
+avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::enable_depth_test(bool enable)
+{
+    m_depth_stencil_state.depthTestEnable = enable ? VK_TRUE : VK_FALSE;
+    return *this;
+}
+
+
+avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::enable_depth_write(bool enable)
+{
+    m_depth_stencil_state.depthWriteEnable = enable ? VK_TRUE : VK_FALSE;
+    return *this;
+}
+
+
+avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::set_depth_compare_op(vk::CompareOp compare_op)
+{
+    m_depth_stencil_state.depthCompareOp = compare_op;
+    return *this;
+}
+
+
+avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::add_buffer(
+    vk::Buffer buffer,
+    VkDeviceSize offset,
+    VkDeviceSize size,
+    vk::DescriptorType type)
+{
+    m_descriptors_count[type]++;
+
+    m_buffers_descriptor_bindings.emplace_back(vk::DescriptorSetLayoutBinding{
+        .binding = static_cast<uint32_t>(m_descriptor_buffers_writes.size()),
+        .descriptorType = type,
+        .descriptorCount = 1,
+        .stageFlags = vk::ShaderStageFlagBits::eAll,
+    });
+
+    m_descriptor_buffers_writes.emplace_back(vk::DescriptorBufferInfo{
+        .buffer = buffer,
+        .offset = offset,
+        .range = size,
+    });
+
+    return *this;
+}
+
+
+avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::add_buffers(
+    const std::vector<vk::Buffer>& buffers,
+    const std::vector<std::pair<VkDeviceSize, VkDeviceSize>>& ranges,
+    vk::DescriptorType type)
+{
+    assert(buffers.size() == ranges.size());
+    m_buffers_descriptor_bindings.reserve(buffers.size());
+    m_descriptor_buffers_writes.reserve(buffers.size());
+
+    auto buffers_begin = buffers.begin();
+    auto ranges_begin = ranges.begin();
+
+    for (; buffers_begin != buffers.end(); ++buffers_begin, ++ranges_begin) {
+        add_buffer(*buffers_begin, ranges_begin->first, ranges_begin->second, type);
+    }
+
+    return *this;
+}
+
+
+avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::add_texture(vk::ImageView image_view, vk::Sampler image_sampler)
+{
+    m_descriptors_count[vk::DescriptorType::eCombinedImageSampler]++;
+
+    m_textures_descriptor_bindings.emplace_back(vk::DescriptorSetLayoutBinding{
+        .binding = static_cast<uint32_t>(m_descriptor_images_writes.size()),
+        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+        .descriptorCount = 1,
+        .stageFlags = vk::ShaderStageFlagBits::eAll,
+    });
+
+    m_descriptor_images_writes.emplace_back(vk::DescriptorImageInfo{
+        .sampler = image_sampler,
+        .imageView = image_view,
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+    });
+
+    return *this;
+}
+
+
+avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::add_textures(
+    const std::vector<vk::ImageView>& images,
+    const std::vector<vk::Sampler>& samplers)
+{
+    assert(images.size() == samplers.size());
+    m_textures_descriptor_bindings.reserve(m_descriptor_images_writes.size() + images.size());
+    m_descriptor_images_writes.reserve(m_descriptor_images_writes.size() + images.size());
+
+    auto images_begin = images.begin();
+    auto samplers_begin = samplers.begin();
+
+    for (; images_begin != images.end(); ++images_begin, ++samplers_begin) {
+        add_texture(*images_begin, *samplers_begin);
+    }
+
+    return *this;
+}
+
+
+avk::_graphics_pipeline avk::graphics_pipeline_builder::create_pipeline()
+{
+    avk::_graphics_pipeline new_pipeline{};
+
+    auto desc_set_layouts = create_descriptor_set_layouts();
+    auto desc_set_layouts_native = avk::to_elements_list<vk::DescriptorSetLayout>(desc_set_layouts.begin(), desc_set_layouts.end());
+
+    auto desc_pool = create_descriptor_pool(desc_set_layouts_native);
+    auto desc_list = create_descriptor_sets(desc_pool, desc_set_layouts_native);
+    auto pipeline_layout = create_pipeline_layout(desc_set_layouts_native);
+
+    new_pipeline.m_buffers_descriptor_bindings = m_buffers_descriptor_bindings;
+    new_pipeline.m_textures_descriptor_bindings = m_textures_descriptor_bindings;
+    new_pipeline.m_push_constant_buffer = m_push_constant_buffer;
+    new_pipeline.m_push_constant_ranges = m_push_constant_ranges;
+
+    m_specialization_info.dataSize = m_spec_data.size();
+    m_specialization_info.pData = m_spec_data.data();
+    m_specialization_info.mapEntryCount = m_specializations_map.size();
+    m_specialization_info.pMapEntries = m_specializations_map.data();
+
+    auto pipeline = avk::create_graphics_pipeline(
+        avk::context::device()->createGraphicsPipeline(
+            {},
+            vk::GraphicsPipelineCreateInfo{
+                .stageCount = static_cast<uint32_t>(m_shader_stages.size()),
+                .pStages = m_shader_stages.data(),
+                .pVertexInputState = &m_vertex_input_state,
+                .pInputAssemblyState = &m_input_assembly_state,
+                .pTessellationState = nullptr,
+                .pViewportState = &m_viewports_state,
+                .pRasterizationState = &m_rasterization_state,
+                .pMultisampleState = &m_multisample_state,
+                .pDepthStencilState = &m_depth_stencil_state,
+                .pColorBlendState = &m_color_blend_state,
+                .pDynamicState = &m_dynamic_state,
+                .layout = pipeline_layout,
+
+                .renderPass = m_pass,
+                .subpass = m_subpass,
+                .basePipelineHandle = {},
+                .basePipelineIndex = -1,
+                }).value);
+
+    new_pipeline.m_pipeline = std::move(pipeline);
+    new_pipeline.m_pipeline_layout = std::move(pipeline_layout);
+    new_pipeline.m_descriptor_pool = std::move(desc_pool);
+    new_pipeline.m_descriptor_sets = std::move(desc_list);
+
+
+    return new_pipeline;
+}
+
+
+avk::pipeline_layout avk::graphics_pipeline_builder::create_pipeline_layout(const std::vector<vk::DescriptorSetLayout>& layouts)
+{
+    return avk::gen_pipeline_layout(
+        m_push_constant_ranges,
+        layouts);
+}
+
+
+avk::descriptor_pool avk::graphics_pipeline_builder::create_descriptor_pool(
+    const std::vector<vk::DescriptorSetLayout>& layouts)
+{
+    std::vector<vk::DescriptorPoolSize> descriptor_pool_sizes{};
+    descriptor_pool_sizes.reserve(m_descriptors_count.size());
+
+    for (const auto [type, count] : m_descriptors_count) {
+        descriptor_pool_sizes.emplace_back(vk::DescriptorPoolSize{
+            .type = type,
+            .descriptorCount = count
+        });
+    }
+
+    if (!descriptor_pool_sizes.empty()) {
+        return avk::create_descriptor_pool(avk::context::device()->createDescriptorPool(
+            vk::DescriptorPoolCreateInfo{
+                .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+                .maxSets = static_cast<uint32_t>(layouts.size()),
+                .poolSizeCount = static_cast<uint32_t>(descriptor_pool_sizes.size()),
+                .pPoolSizes = descriptor_pool_sizes.data(),
+            }));
+    }
+
+    return {};
+}
+
+
+std::vector<avk::descriptor_set_layout> avk::graphics_pipeline_builder::create_descriptor_set_layouts()
+{
+    std::vector<avk::descriptor_set_layout> layouts_list{};
+
+    if (!m_textures_descriptor_bindings.empty()) {
+        layouts_list.emplace_back(avk::create_descriptor_set_layout(
+            avk::context::device()->createDescriptorSetLayout(vk::DescriptorSetLayoutCreateInfo{
+                .bindingCount = static_cast<uint32_t>(m_textures_descriptor_bindings.size()),
+                .pBindings = m_textures_descriptor_bindings.data()})));
+    }
+
+    if (!m_buffers_descriptor_bindings.empty()) {
+        layouts_list.emplace_back(avk::create_descriptor_set_layout(
+            avk::context::device()->createDescriptorSetLayout(vk::DescriptorSetLayoutCreateInfo{
+                .bindingCount = static_cast<uint32_t>(m_buffers_descriptor_bindings.size()),
+                .pBindings = m_buffers_descriptor_bindings.data()})));
+    }
+
+    return layouts_list;
+}
+
+
+avk::descriptor_set_list avk::graphics_pipeline_builder::create_descriptor_sets(
+    const avk::descriptor_pool& pool,
+    const std::vector<vk::DescriptorSetLayout>& layouts)
+{
+    if (layouts.empty()) {
+        return {};
+    }
+
+    auto new_sets = avk::allocate_descriptor_sets(vk::DescriptorSetAllocateInfo{
+        .descriptorPool = pool,
+        .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+        .pSetLayouts = layouts.data()});
+
+    auto curr_set = new_sets->begin();
+
+    if (!m_descriptor_images_writes.empty()) {
+        avk::context::device()->updateDescriptorSets({
+            vk::WriteDescriptorSet{
+                .dstSet = *curr_set,
+                .dstBinding = 0,
+                .dstArrayElement = 0,
+                .descriptorCount = static_cast<uint32_t>(m_descriptor_images_writes.size()),
+                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+                .pImageInfo = m_descriptor_images_writes.data(),
+                .pBufferInfo = nullptr,
+                .pTexelBufferView = nullptr
+            }},
+        {});
+        ++curr_set;
+    }
+
+    if (!m_descriptor_buffers_writes.empty()) {
+        auto curr_buffer_binding = m_buffers_descriptor_bindings.begin();
+
+        for (const auto& buffer_write : m_descriptor_buffers_writes) {
+            avk::context::device()->updateDescriptorSets({
+                vk::WriteDescriptorSet{
+                    .dstSet = *curr_set,
+                    .dstBinding = curr_buffer_binding->binding,
+                    .dstArrayElement = 0,
+                    .descriptorCount = 1,
+                    .descriptorType = curr_buffer_binding->descriptorType,
+                    .pImageInfo = nullptr,
+                    .pBufferInfo = &buffer_write,
+                    .pTexelBufferView = nullptr
+                }},
+                {});
+            ++curr_buffer_binding;
+        }
+        ++curr_set;
+    }
+
+    return new_sets;
+}
+
+
+void avk::_graphics_pipeline::activate(vk::CommandBuffer& cmd_buffer, const std::vector<uint32_t>& dyn_offsets)
+{
+    for (const auto& range : m_push_constant_ranges) {
+        cmd_buffer.pushConstants(m_pipeline_layout, range.stageFlags, 0, range.size, m_push_constant_buffer.data());
+    }
+
+    if (!m_descriptor_sets->empty()) {
+        cmd_buffer.bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics,
+            m_pipeline_layout,
+            0, m_descriptor_sets->size(),
+            m_descriptor_sets->data(),
+            dyn_offsets.size(),
+            dyn_offsets.data());
+    }
+
+    cmd_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
+}

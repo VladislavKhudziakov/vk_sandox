@@ -318,6 +318,8 @@ namespace sandbox::gltf
         bool is_double_sided() const;
         uint32_t get_textures_count() const;
 
+        void for_each_texture(const std::function<void(const texture_data&)>& callback) const;
+
     private:
         pbr_metallic_roughness m_pbr_metallic_roughness_data{};
         texture_data m_normal_texture{};

@@ -347,6 +347,30 @@ uint32_t material::get_textures_count() const
 }
 
 
+void material::for_each_texture(const std::function<void(const texture_data&)>& callback) const
+{
+    if (get_pbr_metallic_roughness().base_color_texture.index >= 0) {
+        callback(get_pbr_metallic_roughness().base_color_texture);
+    }
+
+    if (get_pbr_metallic_roughness().metallic_roughness_texture.index >= 0) {
+        callback(get_pbr_metallic_roughness().metallic_roughness_texture);
+    }
+
+    if (get_normal_texture().index >= 0) {
+        callback(get_normal_texture());
+    }
+
+    if (get_occlusion_texture().index >= 0) {
+        callback(get_occlusion_texture());
+    }
+
+    if (get_emissive_texture().index >= 0) {
+        callback(get_emissive_texture());
+    }
+}
+
+
 camera::camera(const nlohmann::json& camera_json)
     : m_type(extract_json_data<std::string, false>(camera_json, "type", ""))
 {

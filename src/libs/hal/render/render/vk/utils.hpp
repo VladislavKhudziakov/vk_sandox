@@ -186,4 +186,231 @@ namespace sandbox::hal::render::avk
         vk::RenderPassCreateInfo m_pass_info{};
         avk::render_pass m_pass_handler{};
     };
+
+
+    class _graphics_pipeline
+    {
+        friend class graphics_pipeline_builder;
+    public:
+        _graphics_pipeline() = default;
+
+        template<typename T>
+        void push_constant(vk::ShaderStageFlags stage, const T& value)
+        {
+            auto range = std::find_if(
+                m_push_constant_ranges.begin(),
+                m_push_constant_ranges.end(),
+                [stage](const vk::PushConstantRange& range) {
+                    return range.stageFlags == stage;
+                });
+
+            if (range == m_push_constant_ranges.end()) {
+                // TODO
+                throw std::runtime_error("Cannot find push constant stage.");
+            }
+
+            if (sizeof(T) != range->size) {
+                // TODO
+                throw std::runtime_error("Bad push constant value.");
+            }
+
+            auto dst = m_push_constant_buffer.data() + range->offset;
+            std::copy(dst, &value, sizeof(T));
+        }
+
+        void activate(vk::CommandBuffer& cmd_buffer, const std::vector<uint32_t>& dyn_offsets = {});
+
+    private:
+        std::vector<vk::DescriptorSetLayoutBinding> m_buffers_descriptor_bindings{};
+        std::vector<vk::DescriptorSetLayoutBinding> m_textures_descriptor_bindings{};
+
+        std::vector<uint8_t> m_push_constant_buffer{};
+        std::vector<vk::PushConstantRange> m_push_constant_ranges{};
+
+        avk::descriptor_pool m_descriptor_pool{};
+        avk::descriptor_set_list m_descriptor_sets{};
+        avk::pipeline_layout m_pipeline_layout{};
+        avk::pipeline m_pipeline{};
+    };
+
+
+    class graphics_pipeline_builder
+    {
+    public:
+        graphics_pipeline_builder(vk::RenderPass pass, uint32_t subpass, size_t attachments_count);
+
+        _graphics_pipeline create_pipeline();
+
+        template<typename T>
+        graphics_pipeline_builder& add_push_constant(vk::ShaderStageFlags stage, const T& value = T{})
+        {
+            auto range = std::find_if(
+                m_push_constant_ranges.begin(),
+                m_push_constant_ranges.end(),
+                [stage](const vk::PushConstantRange& range) {
+                    return range.stageFlags == stage;
+                });
+
+            assert(range == m_push_constant_ranges.end());
+
+            uint32_t offset = m_push_constant_buffer.size();
+            m_push_constant_buffer.reserve(m_push_constant_buffer.size() + sizeof(value));
+            auto value_begin = reinterpret_cast<const uint8_t*>(&value);
+            std::copy(value_begin, value_begin + sizeof(T), std::back_inserter(m_push_constant_buffer));
+
+            m_push_constant_ranges.emplace_back(vk::PushConstantRange{
+                .stageFlags = stage,
+                .offset = offset,
+                .size = sizeof(T),
+            });
+
+            return *this;
+        }
+
+
+        template<typename T>
+        graphics_pipeline_builder& add_specialization_constant(const T& value)
+        {
+            const uint32_t constant_id = m_specializations_map.size();
+
+            m_specializations_map.emplace_back(vk::SpecializationMapEntry{
+                .constantID = constant_id,
+                .offset = static_cast<uint32_t>(m_spec_data.size()),
+                .size = sizeof(T),
+            });
+
+            m_spec_data.reserve(m_spec_data.size() + sizeof(value));
+
+            auto value_begin = reinterpret_cast<const uint8_t*>(&value);
+            std::copy(value_begin, value_begin + sizeof(T), std::back_inserter(m_spec_data));
+
+            return *this;
+        }
+
+        graphics_pipeline_builder& set_shader_stages(
+            const std::vector<std::pair<vk::ShaderModule, vk::ShaderStageFlagBits>>& stages_list);
+
+        graphics_pipeline_builder& set_vertex_format(
+            const std::vector<vk::VertexInputAttributeDescription>& attrs,
+            const std::vector<vk::VertexInputBindingDescription>& bingings);
+
+        graphics_pipeline_builder& set_primitive_topology(vk::PrimitiveTopology);
+        graphics_pipeline_builder& set_cull_mode(vk::CullModeFlags);
+        graphics_pipeline_builder& set_polygon_mode(vk::PolygonMode);
+
+        graphics_pipeline_builder& enable_depth_test(bool);
+        graphics_pipeline_builder& enable_depth_write(bool);
+        graphics_pipeline_builder& set_depth_compare_op(vk::CompareOp);
+
+        graphics_pipeline_builder& add_buffer(vk::Buffer, VkDeviceSize offset, VkDeviceSize size, vk::DescriptorType type);
+        graphics_pipeline_builder& add_buffers(
+            const std::vector<vk::Buffer>&,
+            const std::vector<std::pair<VkDeviceSize, VkDeviceSize>>&,
+            vk::DescriptorType type);
+
+        graphics_pipeline_builder& add_texture(vk::ImageView, vk::Sampler);
+        graphics_pipeline_builder& add_textures(const std::vector<vk::ImageView>&, const std::vector<vk::Sampler>&);
+
+    private:
+        std::vector<avk::descriptor_set_layout> create_descriptor_set_layouts();
+        avk::descriptor_pool create_descriptor_pool(const std::vector<vk::DescriptorSetLayout>&);
+        avk::descriptor_set_list create_descriptor_sets(const avk::descriptor_pool& pool, const std::vector<vk::DescriptorSetLayout>&);
+
+        avk::pipeline_layout create_pipeline_layout(const std::vector<vk::DescriptorSetLayout>&);
+
+        std::vector<uint8_t> m_push_constant_buffer{};
+        std::vector<vk::PushConstantRange> m_push_constant_ranges{};
+
+        std::unordered_map<vk::DescriptorType, uint32_t> m_descriptors_count{};
+        std::vector<vk::DescriptorSetLayoutBinding> m_buffers_descriptor_bindings{};
+        std::vector<vk::DescriptorSetLayoutBinding> m_textures_descriptor_bindings{};
+
+        std::vector<vk::DescriptorImageInfo> m_descriptor_images_writes{};
+        std::vector<vk::DescriptorBufferInfo> m_descriptor_buffers_writes{};
+
+        std::vector<uint8_t> m_spec_data{};
+        std::vector<vk::SpecializationMapEntry> m_specializations_map{};
+
+        vk::SpecializationInfo m_specialization_info{
+            .mapEntryCount = 0,
+            .pMapEntries = nullptr,
+            .dataSize = 0,
+            .pData = nullptr
+        };
+
+        std::vector<vk::PipelineShaderStageCreateInfo> m_shader_stages{};
+
+        std::vector<vk::VertexInputAttributeDescription> m_vertex_attributes{};
+        std::vector<vk::VertexInputBindingDescription> m_vertex_bingings{};
+
+        vk::PipelineVertexInputStateCreateInfo m_vertex_input_state{
+            .flags = {},
+            .vertexBindingDescriptionCount = 0,
+            .vertexAttributeDescriptionCount = 0
+        };
+
+        vk::PipelineInputAssemblyStateCreateInfo m_input_assembly_state{
+            .flags = {},
+            .topology = vk::PrimitiveTopology::eTriangleList,
+            .primitiveRestartEnable = VK_FALSE
+        };
+
+        std::vector<vk::PipelineColorBlendAttachmentState> m_attachments_blend_states{};
+
+        vk::PipelineColorBlendStateCreateInfo m_color_blend_state{
+            .flags = {},
+            .logicOpEnable = VK_FALSE,
+            .logicOp = {},
+            .attachmentCount = 0
+        };
+
+        vk::PipelineRasterizationStateCreateInfo m_rasterization_state{
+            .flags = {},
+            .depthClampEnable = VK_FALSE,
+            .rasterizerDiscardEnable = VK_FALSE,
+            .polygonMode = vk::PolygonMode::eFill,
+            .cullMode = vk::CullModeFlagBits::eBack,
+            .frontFace = vk::FrontFace::eCounterClockwise,
+            .depthBiasEnable = VK_FALSE,
+        };
+
+        vk::PipelineViewportStateCreateInfo m_viewports_state{
+            .flags = {},
+            .viewportCount = 1,
+            .scissorCount = 1,
+        };
+
+        vk::PipelineDepthStencilStateCreateInfo m_depth_stencil_state{
+            .flags = {},
+            .depthTestEnable = VK_TRUE,
+            .depthWriteEnable = VK_TRUE,
+            .depthCompareOp = vk::CompareOp::eLessOrEqual,
+            .depthBoundsTestEnable = VK_FALSE,
+            .stencilTestEnable = VK_FALSE
+        };
+
+        vk::PipelineMultisampleStateCreateInfo m_multisample_state{
+            .flags = {},
+            .rasterizationSamples = vk::SampleCountFlagBits::e1,
+            .sampleShadingEnable = VK_FALSE,
+            .minSampleShading = 0,
+            .pSampleMask = nullptr,
+            .alphaToCoverageEnable = VK_FALSE,
+            .alphaToOneEnable = VK_FALSE,
+        };
+
+        inline static vk::DynamicState dynamic_states[]{
+            vk::DynamicState::eViewport,
+            vk::DynamicState::eScissor,
+        };
+
+        vk::PipelineDynamicStateCreateInfo m_dynamic_state{
+            .flags = {},
+            .dynamicStateCount = std::size(dynamic_states),
+            .pDynamicStates = dynamic_states,
+        };
+
+        vk::RenderPass m_pass{};
+        uint32_t m_subpass{};
+    };
 } // namespace sandbox::hal::render::avk

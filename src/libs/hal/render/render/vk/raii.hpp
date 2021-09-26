@@ -243,6 +243,7 @@ namespace sandbox::hal::render::avk
 
     using graphics_pipeline = raii_handler<vk::Pipeline>;
     using compute_pipeline = raii_handler<vk::Pipeline>;
+    using pipeline = raii_handler<vk::Pipeline>;
     using pipeline_cache = raii_handler<vk::PipelineCache>;
     using pipeline_layout = raii_handler<vk::PipelineLayout>;
 

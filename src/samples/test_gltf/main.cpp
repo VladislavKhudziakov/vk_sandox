@@ -241,7 +241,7 @@ private:
             create_shader(m_fragment_shader, "./resources/test.frag.spv");
         }
 
-        sandbox::gltf::for_each_scene_node(m_model, [this](const gltf::node& node, int32_t /*node*/) {
+        sandbox::gltf::for_each_scene_node(m_model, [this](const gltf::node& node, int32_t node_index) {
             if (node.get_mesh() < 0) {
                 return;
             }
@@ -255,66 +255,28 @@ private:
 
             for (const auto& primitive : mesh.get_primitives()) {
                 pipeline_data curr_pipeline_data{};
-                const gltf::material* curr_material{};
+                const gltf::material& curr_material = primitive.get_material() < 0 ? materials.back() : materials[primitive.get_material()];
+                const gltf::vk_skin& curr_skin = node.get_skin() < 0 ? m_skins.get_skins().back() : m_skins.get_skins()[node.get_skin()];
 
-                if (primitive.get_material() < 0) {
-                    curr_material = &materials.back();
-                    curr_pipeline_data.descriptor_layouts.emplace_back(gltf::create_material_textures_layout(materials.back()));
-                } else {
-                    curr_material = &materials[primitive.get_material()];
-                    curr_pipeline_data.descriptor_layouts.emplace_back(gltf::create_material_textures_layout(materials[primitive.get_material()]));
-                }
+                avk::graphics_pipeline_builder builder(m_pass.get_native_pass(), 0, 1);
 
-                curr_pipeline_data.descriptor_layouts.emplace_back(gltf::create_primitive_uniforms_layout(*curr_vk_primitive));
+                builder.set_vertex_format(curr_vk_primitive->attributes, curr_vk_primitive->bindings)
+                .set_shader_stages({{m_vertex_shader, vk::ShaderStageFlagBits::eVertex}, {m_fragment_shader, vk::ShaderStageFlagBits::eFragment}})
+                .add_push_constant(vk::ShaderStageFlagBits::eVertex, uint32_t(node_index))
+                .add_specialization_constant(uint32_t(1)) // use hierarchy
+                .add_specialization_constant(uint32_t(0)) // use skin
+                .add_specialization_constant(uint32_t(m_skins.get_hierarchy_transforms().size())) // hierarchy size
+                .add_specialization_constant(1) // skin size
+                .add_buffer(m_uniform_buffer.as<vk::Buffer>(), node.get_mesh() * sizeof(gltf::instance_transform_data), sizeof(gltf::instance_transform_data), vk::DescriptorType::eUniformBuffer)
+                .add_buffer(m_skins.get_hierarchy_buffer().as<vk::Buffer>(), 0, m_skins.get_hierarchy_transforms().size() * sizeof(glm::mat4), vk::DescriptorType::eUniformBuffer)
+                .add_buffer(m_skins.get_skin_buffer().as<vk::Buffer>(), curr_skin.offset, curr_skin.size, vk::DescriptorType::eUniformBuffer);
 
-                auto descriptor_set_layouts = avk::to_elements_list<vk::DescriptorSetLayout>(
-                    curr_pipeline_data.descriptor_layouts.begin(), curr_pipeline_data.descriptor_layouts.end());
+                curr_material.for_each_texture([this, &builder](const gltf::material::texture_data& tex_data) {
+                    const auto& vk_tex = m_texture_atlas.get_texture(tex_data.index);
+                    builder.add_texture(vk_tex.image_view, vk_tex.sampler);
+                });
 
-                auto [pool, sets] = avk::gen_descriptor_sets(
-                    descriptor_set_layouts,
-                    {{materials[primitive.get_material()].get_textures_count(), vk::DescriptorType::eCombinedImageSampler},
-                     {3, vk::DescriptorType::eUniformBuffer}});
-
-                curr_pipeline_data.pool = std::move(pool);
-                curr_pipeline_data.descriptors = std::move(sets);
-
-                gltf::write_material_textures_descriptors(
-                    materials[primitive.get_material()],
-                    curr_pipeline_data.descriptors->at(0),
-                    m_texture_atlas);
-
-                gltf::write_node_uniforms_descriptors(
-                    node,
-                    curr_pipeline_data.descriptors->at(1),
-                    m_uniform_buffer.as<vk::Buffer>(),
-                    m_skins);
-
-                curr_pipeline_data.layout = avk::gen_pipeline_layout(
-                    {vk::PushConstantRange{
-                        .stageFlags = vk::ShaderStageFlagBits::eVertex,
-                        .offset = 0,
-                        .size = sizeof(uint32_t)}},
-                    descriptor_set_layouts);
-
-                curr_pipeline_data.pipeline = gltf::create_pipeline_from_primitive(
-                    *curr_vk_primitive,
-                    {{m_vertex_shader, vk::ShaderStageFlagBits::eVertex},
-                     {m_fragment_shader, vk::ShaderStageFlagBits::eFragment}},
-                    curr_pipeline_data.layout,
-                    m_pass.get_native_pass(),
-                    0,
-                    gltf::pipeline_primitive_topology::triangles,
-                    gltf::pipeline_blend_mode::none,
-                    false,
-                    true,
-                    true,
-                    true,
-                    true,
-                    false,
-                    m_skins.get_hierarchy_transforms().size(),
-                    1);
-
-                m_models_primitives_pipelines[node.get_mesh()].emplace_back(std::move(curr_pipeline_data));
+                m_models_primitives_pipelines[node.get_mesh()].emplace_back(builder.create_pipeline());
                 curr_vk_primitive++;
             }
         });
@@ -423,26 +385,10 @@ private:
             }
 
             auto curr_pipeline = m_models_primitives_pipelines[node.get_mesh()].begin();
-            command_buffer.pushConstants(
-                curr_pipeline->layout,
-                vk::ShaderStageFlagBits::eVertex,
-                0,
-                sizeof(uint32_t),
-                &node_index);
 
             for (const auto& primitive : m_geometry.get_primitives(node.get_mesh())) {
-                command_buffer.bindDescriptorSets(
-                    vk::PipelineBindPoint::eGraphics,
-                    curr_pipeline->layout,
-                    0,
-                    curr_pipeline->descriptors->size(),
-                    curr_pipeline->descriptors->data(),
-                    0,
-                    nullptr);
-
-                command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, curr_pipeline->pipeline);
+                curr_pipeline++->activate(command_buffer);
                 gltf::draw_primitive(primitive, m_geometry.get_vertex_buffer(), m_geometry.get_index_buffer(), command_buffer);
-                curr_pipeline++;
             }
         });
 
@@ -472,7 +418,7 @@ private:
     avk::shader_module m_vertex_shader{};
     avk::shader_module m_fragment_shader{};
 
-    std::unordered_map<int32_t, std::vector<pipeline_data>> m_models_primitives_pipelines{};
+    std::unordered_map<int32_t, std::vector<avk::_graphics_pipeline>> m_models_primitives_pipelines{};
 
     std::optional<gltf::cpu_animation_controller> m_anim_controller{};
 
