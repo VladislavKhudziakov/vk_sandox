@@ -84,25 +84,6 @@ namespace sandbox::gltf
 
     vk::Format stb_channels_count_to_vk_format(int32_t);
 
-    sandbox::hal::render::avk::descriptor_set_layout
-    create_material_textures_layout(const gltf::material& material);
-
-    sandbox::hal::render::avk::descriptor_set_layout
-    create_primitive_uniforms_layout(
-        const gltf::vk_primitive& primitive);
-
-    void write_material_textures_descriptors(
-        const gltf::material& material,
-        vk::DescriptorSet dst_set,
-        const gltf::vk_texture_atlas& tex_atlas);
-
-    void write_node_uniforms_descriptors(
-        const gltf::node& node,
-        vk::DescriptorSet dst_set,
-        vk::Buffer instance_data_buffer,
-        const gltf::vk_geometry_skins& geometry);
-
-
     struct vk_material_info
     {
         vk_material_info static from_gltf_material(const gltf::material&);

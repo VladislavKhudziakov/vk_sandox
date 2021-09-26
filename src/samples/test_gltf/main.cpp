@@ -51,75 +51,40 @@ protected:
 
     void create_render_passes() override
     {
-        // clang-format off
-        avk::pass_create_info info{
-            .attachments = {
-                {
-                    .flags = {},
-                    .format = vk::Format::eR8G8B8A8Srgb,
-                    .samples = vk::SampleCountFlagBits::e1,
-                    .loadOp = vk::AttachmentLoadOp::eClear,
-                    .storeOp = vk::AttachmentStoreOp::eStore,
-                    .initialLayout = vk::ImageLayout::eUndefined,
-                    .finalLayout = vk::ImageLayout::eTransferSrcOptimal,
-                },
-                {
-                    .flags = {},
-                    .format = vk::Format::eD24UnormS8Uint,
-                    .samples = vk::SampleCountFlagBits::e1,
-                    .loadOp = vk::AttachmentLoadOp::eClear,
-                    .storeOp = vk::AttachmentStoreOp::eDontCare,
-                    .initialLayout = vk::ImageLayout::eUndefined,
-                    .finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-                }
-            },
-            .attachments_refs = {
-                {
-                     .attachment = 0,
-                     .layout = vk::ImageLayout::eColorAttachmentOptimal,
-                },
-                {
-                    .attachment = 1,
-                    .layout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-                }
-            },
-            .subpasses = {
-                {
-                    .flags = {},
-                    .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
-                    .colorAttachmentCount = 1,
-                    .pColorAttachments = &info.attachments_refs[0],
-                    .pDepthStencilAttachment = &info.attachments_refs[1]
-                }
-            },
-            .subpass_dependencies = {
-                {
-                    .srcSubpass = VK_SUBPASS_EXTERNAL,
-                    .dstSubpass = 0,
-                    .srcStageMask = vk::PipelineStageFlagBits::eTransfer,
-                    .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                    .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-                    .dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead,
-                    .dependencyFlags = {},
-                }
-            }
-        };
-        // clang-format on
-        m_pass = avk::render_pass_wrapper(std::move(info));
+        m_pass = avk::render_pass_builder()
+                     .begin_sub_pass(vk::SampleCountFlagBits::e1)
+                     .add_color_attachment(
+                         {0, 0},
+                         {1.0f, 1.0f},
+                         vk::Format::eR8G8B8A8Srgb,
+                         vk::ImageLayout::eUndefined,
+                         vk::ImageLayout::eColorAttachmentOptimal,
+                         vk::ImageLayout::eTransferSrcOptimal,
+                         std::array{0.2f, 0.3f, 0.6f, 1.0f})
+                     .set_depth_stencil_attachment(
+                         {0, 0},
+                         {1.0f, 1.0f},
+                         vk::Format::eD24UnormS8Uint,
+                         vk::ImageLayout::eUndefined,
+                         vk::ImageLayout::eDepthStencilAttachmentOptimal,
+                         vk::ImageLayout::eDepthStencilAttachmentOptimal,
+                         1.0f)
+                     .finish_sub_pass()
+                     .add_sub_pass_dependency({
+                         .srcSubpass = VK_SUBPASS_EXTERNAL,
+                         .dstSubpass = 0,
+                         .srcStageMask = vk::PipelineStageFlagBits::eTransfer,
+                         .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                         .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+                         .dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead,
+                         .dependencyFlags = {},
+                     })
+                     .create_pass();
     }
 
     void create_framebuffers(uint32_t width, uint32_t height) override
     {
-        uint32_t queue_family = avk::context::queue_family(vk::QueueFlagBits::eGraphics);
-
-        auto [framebuffer, attachments, attachments_views] = avk::gen_framebuffer(
-            width, height, queue_family, m_pass.get_info(), m_pass.get_native_pass(), {}, {vk::ImageUsageFlagBits::eTransferSrc});
-
-        m_framebuffer = std::move(framebuffer);
-        m_attachments = std::move(attachments);
-        m_attachments_views = std::move(attachments_views);
-
-        m_reset_command_buffer = true;
+        m_pass.resize(avk::context::queue_family(vk::QueueFlagBits::eGraphics), width, height);
     }
 
     void create_sync_primitives() override
@@ -191,7 +156,7 @@ protected:
 
     vk::Image get_final_image() override
     {
-        return m_attachments.front().as<vk::Image>();
+        return m_pass.get_framebuffer_image(0);
     }
 
     const std::vector<vk::Semaphore>& get_wait_semaphores() override
@@ -261,15 +226,15 @@ private:
                 avk::graphics_pipeline_builder builder(m_pass.get_native_pass(), 0, 1);
 
                 builder.set_vertex_format(curr_vk_primitive->attributes, curr_vk_primitive->bindings)
-                .set_shader_stages({{m_vertex_shader, vk::ShaderStageFlagBits::eVertex}, {m_fragment_shader, vk::ShaderStageFlagBits::eFragment}})
-                .add_push_constant(vk::ShaderStageFlagBits::eVertex, uint32_t(node_index))
-                .add_specialization_constant(uint32_t(1)) // use hierarchy
-                .add_specialization_constant(uint32_t(0)) // use skin
-                .add_specialization_constant(uint32_t(m_skins.get_hierarchy_transforms().size())) // hierarchy size
-                .add_specialization_constant(1) // skin size
-                .add_buffer(m_uniform_buffer.as<vk::Buffer>(), node.get_mesh() * sizeof(gltf::instance_transform_data), sizeof(gltf::instance_transform_data), vk::DescriptorType::eUniformBuffer)
-                .add_buffer(m_skins.get_hierarchy_buffer().as<vk::Buffer>(), 0, m_skins.get_hierarchy_transforms().size() * sizeof(glm::mat4), vk::DescriptorType::eUniformBuffer)
-                .add_buffer(m_skins.get_skin_buffer().as<vk::Buffer>(), curr_skin.offset, curr_skin.size, vk::DescriptorType::eUniformBuffer);
+                    .set_shader_stages({{m_vertex_shader, vk::ShaderStageFlagBits::eVertex}, {m_fragment_shader, vk::ShaderStageFlagBits::eFragment}})
+                    .add_push_constant(vk::ShaderStageFlagBits::eVertex, uint32_t(node_index))
+                    .add_specialization_constant(uint32_t(1))                                         // use hierarchy
+                    .add_specialization_constant(uint32_t(0))                                         // use skin
+                    .add_specialization_constant(uint32_t(m_skins.get_hierarchy_transforms().size())) // hierarchy size
+                    .add_specialization_constant(1)                                                   // skin size
+                    .add_buffer(m_uniform_buffer.as<vk::Buffer>(), node.get_mesh() * sizeof(gltf::instance_transform_data), sizeof(gltf::instance_transform_data), vk::DescriptorType::eUniformBuffer)
+                    .add_buffer(m_skins.get_hierarchy_buffer().as<vk::Buffer>(), 0, m_skins.get_hierarchy_transforms().size() * sizeof(glm::mat4), vk::DescriptorType::eUniformBuffer)
+                    .add_buffer(m_skins.get_skin_buffer().as<vk::Buffer>(), curr_skin.offset, curr_skin.size, vk::DescriptorType::eUniformBuffer);
 
                 curr_material.for_each_texture([this, &builder](const gltf::material::texture_data& tex_data) {
                     const auto& vk_tex = m_texture_atlas.get_texture(tex_data.index);
@@ -337,47 +302,7 @@ private:
                 });
         }
 
-        command_buffer.setViewport(
-            0,
-            {vk::Viewport{
-                .x = 0,
-                .y = 0,
-                .width = static_cast<float>(fb_width),
-                .height = static_cast<float>(fb_height),
-                .minDepth = 0,
-                .maxDepth = 1}});
-
-        command_buffer.setScissor(
-            0, {vk::Rect2D{
-                   .offset = {.x = 0, .y = 0},
-                   .extent = {
-                       .width = static_cast<uint32_t>(fb_width),
-                       .height = static_cast<uint32_t>(fb_height),
-                   },
-               }});
-
-        vk::ClearValue clear[]{
-            vk::ClearColorValue{std::array<float, 4>{0.1f, 0.2f, 0.6f, 1.0f}},
-            vk::ClearColorValue{std::array<float, 4>{1.0f}}};
-
-        command_buffer.beginRenderPass(
-            vk::RenderPassBeginInfo{
-                .renderPass = m_pass.get_native_pass(),
-                .framebuffer = m_framebuffer,
-                .renderArea = {
-                    .offset = {
-                        .x = 0,
-                        .y = 0,
-                    },
-                    .extent = {
-                        .width = static_cast<uint32_t>(fb_width),
-                        .height = static_cast<uint32_t>(fb_height),
-                    },
-                },
-                .clearValueCount = std::size(clear),
-                .pClearValues = clear,
-            },
-            vk::SubpassContents::eInline);
+        m_pass.begin(command_buffer);
 
         for_each_scene_node(m_model, [this, &instance_transforms, &command_buffer](const gltf::node& node, int32_t node_index) {
             if (node.get_mesh() < 0) {
@@ -392,7 +317,7 @@ private:
             }
         });
 
-        command_buffer.endRenderPass();
+        m_pass.finish(command_buffer);
         command_buffer.end();
     }
 
@@ -401,11 +326,7 @@ private:
     gltf::vk_texture_atlas m_texture_atlas{};
     gltf::vk_geometry_skins m_skins{};
 
-    avk::render_pass_wrapper m_pass{};
-
-    avk::framebuffer m_framebuffer{};
-    std::vector<avk::vma_image> m_attachments{};
-    std::vector<avk::image_view> m_attachments_views{};
+    avk::_render_pass m_pass{};
 
     std::vector<avk::semaphore> m_semaphores{};
     std::vector<vk::Semaphore> m_native_semaphores{};

@@ -385,30 +385,39 @@ avk::gen_framebuffer(
     uint32_t width,
     uint32_t height,
     uint32_t queue_family,
-    const vk::RenderPassCreateInfo& pass_info,
     const vk::RenderPass& pass,
-    const std::vector<float>& attachments_scales,
-    const std::vector<vk::ImageUsageFlagBits>& attachments_usages)
+    const std::vector<vk::AttachmentDescription>& attachments,
+    const std::vector<vk::Extent2D>& attachment_sizes,
+    const std::vector<std::pair<float, float>>& attachments_scales,
+    const std::vector<vk::ImageUsageFlags>& attachments_usages)
 {
     std::vector<avk::vma_image> images{};
     std::vector<avk::image_view> images_views{};
     std::vector<vk::ImageView> image_views_native{};
 
-    images.reserve(pass_info.attachmentCount);
-    images_views.reserve(pass_info.attachmentCount);
-    image_views_native.reserve(pass_info.attachmentCount);
+    images.reserve(attachments.size());
+    images_views.reserve(attachments.size());
+    image_views_native.reserve(attachments.size());
 
-    for (int i = 0; i < pass_info.attachmentCount; ++i) {
-        const auto& attachment = pass_info.pAttachments[i];
+    for (int i = 0; i < attachments.size(); ++i) {
+        const auto& attachment = attachments[i];
 
         uint32_t attachment_width = width;
         uint32_t attachment_height = height;
-        vk::ImageUsageFlagBits attachment_usage = {};
 
-        if (i < attachments_scales.size() && attachments_scales[i] > 0) {
-            attachment_width *= attachments_scales[i];
-            attachment_height *= attachments_scales[i];
+        if (i < attachment_sizes.size() && attachment_sizes[i].width > 0) {
+            attachment_width = attachment_sizes[i].width;
+        } else if (i < attachments_scales.size() && attachments_scales[i].first > 0) {
+            attachment_width *= attachments_scales[i].first;
         }
+
+        if (i < attachment_sizes.size() && attachment_sizes[i].height > 0) {
+            attachment_height = attachment_sizes[i].height;
+        } else if (i < attachments_scales.size() && attachments_scales[i].second > 0) {
+            attachment_height *= attachments_scales[i].second;
+        }
+
+        vk::ImageUsageFlags attachment_usage = {};
 
         if (i < attachments_usages.size()) {
             attachment_usage = attachments_usages[i];
@@ -951,10 +960,7 @@ avk::graphics_pipeline_builder::graphics_pipeline_builder(
     , m_subpass(subpass)
 {
     m_attachments_blend_states.resize(
-        attachments_count, vk::PipelineColorBlendAttachmentState{
-            .blendEnable = VK_FALSE,
-            .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |vk::ColorComponentFlagBits::eB |vk::ColorComponentFlagBits::eA
-       });
+        attachments_count, vk::PipelineColorBlendAttachmentState{.blendEnable = VK_FALSE, .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA});
 
     m_color_blend_state.pAttachments = m_attachments_blend_states.data();
     m_color_blend_state.attachmentCount = m_attachments_blend_states.size();
@@ -971,8 +977,7 @@ avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::set_vertex_forma
         .vertexBindingDescriptionCount = static_cast<uint32_t>(m_vertex_bingings.size()),
         .pVertexBindingDescriptions = m_vertex_bingings.data(),
         .vertexAttributeDescriptionCount = static_cast<uint32_t>(m_vertex_attributes.size()),
-        .pVertexAttributeDescriptions = m_vertex_attributes.data()
-    };
+        .pVertexAttributeDescriptions = m_vertex_attributes.data()};
 
     return *this;
 }
@@ -984,7 +989,7 @@ avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::set_shader_stage
     m_shader_stages.clear();
     m_shader_stages.reserve(stages_list.size());
 
-    for (const auto& [module, stage] : stages_list){
+    for (const auto& [module, stage] : stages_list) {
         m_shader_stages.emplace_back(vk::PipelineShaderStageCreateInfo{
             .flags = {},
             .stage = stage,
@@ -996,7 +1001,6 @@ avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::set_shader_stage
 
     return *this;
 }
-
 
 
 avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::set_primitive_topology(vk::PrimitiveTopology topology)
@@ -1100,8 +1104,7 @@ avk::graphics_pipeline_builder& avk::graphics_pipeline_builder::add_texture(vk::
     m_descriptor_images_writes.emplace_back(vk::DescriptorImageInfo{
         .sampler = image_sampler,
         .imageView = image_view,
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-    });
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal});
 
     return *this;
 }
@@ -1149,26 +1152,27 @@ avk::_graphics_pipeline avk::graphics_pipeline_builder::create_pipeline()
 
     auto pipeline = avk::create_graphics_pipeline(
         avk::context::device()->createGraphicsPipeline(
-            {},
-            vk::GraphicsPipelineCreateInfo{
-                .stageCount = static_cast<uint32_t>(m_shader_stages.size()),
-                .pStages = m_shader_stages.data(),
-                .pVertexInputState = &m_vertex_input_state,
-                .pInputAssemblyState = &m_input_assembly_state,
-                .pTessellationState = nullptr,
-                .pViewportState = &m_viewports_state,
-                .pRasterizationState = &m_rasterization_state,
-                .pMultisampleState = &m_multisample_state,
-                .pDepthStencilState = &m_depth_stencil_state,
-                .pColorBlendState = &m_color_blend_state,
-                .pDynamicState = &m_dynamic_state,
-                .layout = pipeline_layout,
+                                  {},
+                                  vk::GraphicsPipelineCreateInfo{
+                                      .stageCount = static_cast<uint32_t>(m_shader_stages.size()),
+                                      .pStages = m_shader_stages.data(),
+                                      .pVertexInputState = &m_vertex_input_state,
+                                      .pInputAssemblyState = &m_input_assembly_state,
+                                      .pTessellationState = nullptr,
+                                      .pViewportState = &m_viewports_state,
+                                      .pRasterizationState = &m_rasterization_state,
+                                      .pMultisampleState = &m_multisample_state,
+                                      .pDepthStencilState = &m_depth_stencil_state,
+                                      .pColorBlendState = &m_color_blend_state,
+                                      .pDynamicState = &m_dynamic_state,
+                                      .layout = pipeline_layout,
 
-                .renderPass = m_pass,
-                .subpass = m_subpass,
-                .basePipelineHandle = {},
-                .basePipelineIndex = -1,
-                }).value);
+                                      .renderPass = m_pass,
+                                      .subpass = m_subpass,
+                                      .basePipelineHandle = {},
+                                      .basePipelineIndex = -1,
+                                  })
+            .value);
 
     new_pipeline.m_pipeline = std::move(pipeline);
     new_pipeline.m_pipeline_layout = std::move(pipeline_layout);
@@ -1197,8 +1201,7 @@ avk::descriptor_pool avk::graphics_pipeline_builder::create_descriptor_pool(
     for (const auto [type, count] : m_descriptors_count) {
         descriptor_pool_sizes.emplace_back(vk::DescriptorPoolSize{
             .type = type,
-            .descriptorCount = count
-        });
+            .descriptorCount = count});
     }
 
     if (!descriptor_pool_sizes.empty()) {
@@ -1253,18 +1256,7 @@ avk::descriptor_set_list avk::graphics_pipeline_builder::create_descriptor_sets(
     auto curr_set = new_sets->begin();
 
     if (!m_descriptor_images_writes.empty()) {
-        avk::context::device()->updateDescriptorSets({
-            vk::WriteDescriptorSet{
-                .dstSet = *curr_set,
-                .dstBinding = 0,
-                .dstArrayElement = 0,
-                .descriptorCount = static_cast<uint32_t>(m_descriptor_images_writes.size()),
-                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                .pImageInfo = m_descriptor_images_writes.data(),
-                .pBufferInfo = nullptr,
-                .pTexelBufferView = nullptr
-            }},
-        {});
+        avk::context::device()->updateDescriptorSets({vk::WriteDescriptorSet{.dstSet = *curr_set, .dstBinding = 0, .dstArrayElement = 0, .descriptorCount = static_cast<uint32_t>(m_descriptor_images_writes.size()), .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = m_descriptor_images_writes.data(), .pBufferInfo = nullptr, .pTexelBufferView = nullptr}}, {});
         ++curr_set;
     }
 
@@ -1272,18 +1264,7 @@ avk::descriptor_set_list avk::graphics_pipeline_builder::create_descriptor_sets(
         auto curr_buffer_binding = m_buffers_descriptor_bindings.begin();
 
         for (const auto& buffer_write : m_descriptor_buffers_writes) {
-            avk::context::device()->updateDescriptorSets({
-                vk::WriteDescriptorSet{
-                    .dstSet = *curr_set,
-                    .dstBinding = curr_buffer_binding->binding,
-                    .dstArrayElement = 0,
-                    .descriptorCount = 1,
-                    .descriptorType = curr_buffer_binding->descriptorType,
-                    .pImageInfo = nullptr,
-                    .pBufferInfo = &buffer_write,
-                    .pTexelBufferView = nullptr
-                }},
-                {});
+            avk::context::device()->updateDescriptorSets({vk::WriteDescriptorSet{.dstSet = *curr_set, .dstBinding = curr_buffer_binding->binding, .dstArrayElement = 0, .descriptorCount = 1, .descriptorType = curr_buffer_binding->descriptorType, .pImageInfo = nullptr, .pBufferInfo = &buffer_write, .pTexelBufferView = nullptr}}, {});
             ++curr_buffer_binding;
         }
         ++curr_set;
@@ -1303,11 +1284,299 @@ void avk::_graphics_pipeline::activate(vk::CommandBuffer& cmd_buffer, const std:
         cmd_buffer.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics,
             m_pipeline_layout,
-            0, m_descriptor_sets->size(),
+            0,
+            m_descriptor_sets->size(),
             m_descriptor_sets->data(),
             dyn_offsets.size(),
             dyn_offsets.data());
     }
 
     cmd_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
+}
+
+
+avk::render_pass_builder& avk::render_pass_builder::begin_sub_pass(vk::SampleCountFlagBits samples)
+{
+    m_sub_passes_data.emplace_back(sub_pass_data{
+        .samples = samples});
+
+    //    m_subpasses.emplace_back(vk::SubpassDescription{
+    //        .flags = {},
+    //        .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
+    //        .inputAttachmentCount = 0,
+    //        .pInputAttachments = nullptr,
+    //        .colorAttachmentCount = 0,
+    //        .pColorAttachments = nullptr,
+    //        .pResolveAttachments = nullptr,
+    //        .pDepthStencilAttachment = nullptr,
+    //        .preserveAttachmentCount = 0,
+    //        .pPreserveAttachments = nullptr,
+    //    });
+
+    return *this;
+}
+
+
+avk::render_pass_builder& avk::render_pass_builder::add_color_attachment(
+    vk::Extent2D size,
+    scale_fator scale,
+    vk::Format format,
+    vk::ImageLayout init_layout,
+    vk::ImageLayout subpass_layout,
+    vk::ImageLayout final_layout,
+    std::optional<std::array<float, 4>> clear_values)
+{
+    m_attachments_sizes.emplace_back(size);
+    m_attachments_scales.emplace_back(scale);
+
+    m_attachments.emplace_back(vk::AttachmentDescription{
+        .flags = {},
+        .format = format,
+        .samples = m_sub_passes_data.back().samples,
+        .loadOp = clear_values ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eDontCare,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .initialLayout = init_layout,
+        .finalLayout = final_layout});
+
+    m_sub_passes_data.back().color_attachments.emplace_back(vk::AttachmentReference{
+        .attachment = static_cast<uint32_t>(m_attachments.size() - 1),
+        .layout = subpass_layout,
+    });
+
+    if (clear_values) {
+        m_clear_values.emplace_back(vk::ClearColorValue{*clear_values});
+    }
+
+    if (m_sub_passes_data.back().samples != vk::SampleCountFlagBits::e1) {
+        m_attachments_sizes.emplace_back(size);
+        m_attachments_scales.emplace_back(scale);
+
+        m_attachments.emplace_back(vk::AttachmentDescription{
+            .flags = {},
+            .format = format,
+            .samples = vk::SampleCountFlagBits::e1,
+            .loadOp = clear_values ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .initialLayout = init_layout,
+            .finalLayout = final_layout});
+
+        m_sub_passes_data.back().resolve_attachments.emplace_back(vk::AttachmentReference{
+            .attachment = static_cast<uint32_t>(m_attachments.size() - 1),
+            .layout = subpass_layout,
+        });
+
+        if (clear_values) {
+            m_clear_values.emplace_back(vk::ClearColorValue{*clear_values});
+        }
+    }
+
+    return *this;
+}
+
+
+avk::render_pass_builder& avk::render_pass_builder::set_depth_stencil_attachment(
+    vk::Extent2D size,
+    scale_fator scale,
+    vk::Format format,
+    vk::ImageLayout init_layout,
+    vk::ImageLayout subpass_layout,
+    vk::ImageLayout final_layout,
+    std::optional<float> clear_values,
+    std::optional<uint32_t> stencil_clear_values)
+{
+    m_attachments_sizes.emplace_back(size);
+    m_attachments_scales.emplace_back(scale);
+
+    if (m_sub_passes_data.back().depth_stencil_attachment_ref) {
+        throw std::runtime_error("Depth stencil attachment already settled.");
+    } else {
+        // TODO MSAA
+        m_attachments.emplace_back(vk::AttachmentDescription{
+            .flags = {},
+            .format = format,
+            .samples = vk::SampleCountFlagBits::e1,
+            .loadOp = clear_values ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .stencilLoadOp = stencil_clear_values ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
+            .stencilStoreOp = vk::AttachmentStoreOp::eStore,
+            .initialLayout = init_layout,
+            .finalLayout = final_layout});
+
+        m_sub_passes_data.back().depth_stencil_attachment_ref = vk::AttachmentReference{
+            .attachment = static_cast<uint32_t>(m_attachments.size() - 1),
+            .layout = subpass_layout,
+        };
+
+        if (clear_values || stencil_clear_values) {
+            m_clear_values.emplace_back(vk::ClearDepthStencilValue{
+                clear_values ? *clear_values : 1,
+                stencil_clear_values ? *stencil_clear_values : 0});
+        }
+    }
+
+    return *this;
+}
+
+
+avk::render_pass_builder& avk::render_pass_builder::finish_sub_pass()
+{
+    return *this;
+}
+
+
+avk::_render_pass avk::render_pass_builder::create_pass(uint32_t framebuffers_count)
+{
+    avk::_render_pass new_pass{};
+
+    for (const auto& pass_data : m_sub_passes_data) {
+        m_sub_passes.emplace_back(vk::SubpassDescription{
+            .flags = {},
+            .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
+            .inputAttachmentCount = 0,
+            .pInputAttachments = nullptr,
+            .colorAttachmentCount = static_cast<uint32_t>(pass_data.color_attachments.size()),
+            .pColorAttachments = pass_data.color_attachments.data(),
+            .pResolveAttachments = pass_data.resolve_attachments.data(),
+            .pDepthStencilAttachment = pass_data.depth_stencil_attachment_ref ? &*pass_data.depth_stencil_attachment_ref : nullptr,
+            .preserveAttachmentCount = 0,
+            .pPreserveAttachments = nullptr,
+        });
+    }
+
+    new_pass.m_pass = avk::create_render_pass(avk::context::device()->createRenderPass(vk::RenderPassCreateInfo{
+        .flags = {},
+        .attachmentCount = static_cast<uint32_t>(m_attachments.size()),
+        .pAttachments = m_attachments.data(),
+        .subpassCount = static_cast<uint32_t>(m_sub_passes.size()),
+        .pSubpasses = m_sub_passes.data(),
+        .dependencyCount = static_cast<uint32_t>(m_sub_pass_dependencies.size()),
+        .pDependencies = m_sub_pass_dependencies.data(),
+    }));
+
+    new_pass.m_attachments_scales = m_attachments_scales;
+    new_pass.m_attachments_sizes = m_attachments_sizes;
+    new_pass.m_clear_values = m_clear_values;
+    new_pass.m_attachments_descriptions = m_attachments;
+    new_pass.m_framebuffers_count = framebuffers_count;
+
+    return new_pass;
+}
+
+
+avk::render_pass_builder& avk::render_pass_builder::add_sub_pass_dependency(const vk::SubpassDependency& dep)
+{
+    m_sub_pass_dependencies.emplace_back(dep);
+    return *this;
+}
+
+
+void avk::_render_pass::resize(uint32_t queue_family, uint32_t width, uint32_t height)
+{
+    m_framebuffer_width = width;
+    m_framebuffer_height = height;
+
+    if (m_attachments_usages.empty()) {
+        m_attachments_usages.reserve(m_attachments_descriptions.size());
+
+        for (const auto& _ : m_attachments_descriptions) {
+            m_attachments_usages.emplace_back(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled);
+        }
+    }
+
+    m_framebuffers.clear();
+    m_framebuffers.reserve(m_framebuffers_count);
+    m_images.clear();
+    m_images.reserve(m_attachments_descriptions.size() * m_framebuffers_count);
+    m_images_views.clear();
+    m_images_views.reserve(m_attachments_descriptions.size() * m_framebuffers_count);
+
+    for (int i = 0; i < m_framebuffers_count; ++i) {
+        auto [framebuffer, images, images_views] = avk::gen_framebuffer(
+            width,
+            height,
+            queue_family,
+            m_pass,
+            m_attachments_descriptions,
+            m_attachments_sizes,
+            m_attachments_scales,
+            m_attachments_usages);
+
+        m_framebuffers.emplace_back(std::move(framebuffer));
+
+        for (auto& img : images) {
+            m_images.emplace_back(std::move(img));
+        }
+
+        for (auto& img_view : images_views) {
+            m_images_views.emplace_back(std::move(img_view));
+        }
+    }
+}
+
+
+void avk::_render_pass::begin(vk::CommandBuffer& command_buffer, vk::SubpassContents content)
+{
+    command_buffer.setViewport(
+        0,
+        {vk::Viewport{
+            .x = 0,
+            .y = 0,
+            .width = static_cast<float>(m_framebuffer_width),
+            .height = static_cast<float>(m_framebuffer_height),
+            .minDepth = 0,
+            .maxDepth = 1}});
+
+    command_buffer.setScissor(
+        0, {vk::Rect2D{
+               .offset = {.x = 0, .y = 0},
+               .extent = {
+                   .width = m_framebuffer_width,
+                   .height = m_framebuffer_height,
+               },
+           }});
+
+    command_buffer.beginRenderPass(
+        vk::RenderPassBeginInfo{
+            .renderPass = m_pass,
+            .framebuffer = m_framebuffers[m_current_framebuffer_index],
+            .renderArea = {
+                .offset = {
+                    .x = 0,
+                    .y = 0,
+                },
+                .extent = {
+                    .width = m_framebuffer_width,
+                    .height = m_framebuffer_height,
+                },
+            },
+
+            .clearValueCount = static_cast<uint32_t>(m_clear_values.size()),
+            .pClearValues = m_clear_values.data(),
+        },
+        content);
+}
+
+
+void avk::_render_pass::next_sub_pass(vk::CommandBuffer& command_buffer, vk::SubpassContents content)
+{
+    command_buffer.nextSubpass(content);
+}
+
+
+void avk::_render_pass::finish(vk::CommandBuffer& command_buffer)
+{
+    command_buffer.endRenderPass();
+    m_current_framebuffer_index = (m_current_framebuffer_index + 1) % m_framebuffers_count;
+}
+
+
+vk::RenderPass avk::_render_pass::get_native_pass() const
+{
+    return m_pass.as<vk::RenderPass>();
+}
+
+
+vk::Image avk::_render_pass::get_framebuffer_image(uint32_t image, uint32_t framebuffer_index)
+{
+    return m_images[m_attachments_descriptions.size() * framebuffer_index + image].as<vk::Image>();
 }

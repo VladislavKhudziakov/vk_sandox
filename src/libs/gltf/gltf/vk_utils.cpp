@@ -7,35 +7,6 @@ using namespace sandbox;
 using namespace sandbox::hal::render;
 
 
-namespace
-{
-    void for_each_material_texture(
-        const gltf::material& material,
-        const std::function<void(const gltf::material::texture_data& tex_data)> callback)
-    {
-        if (material.get_pbr_metallic_roughness().base_color_texture.index >= 0) {
-            callback(material.get_pbr_metallic_roughness().base_color_texture);
-        }
-
-        if (material.get_pbr_metallic_roughness().metallic_roughness_texture.index >= 0) {
-            callback(material.get_pbr_metallic_roughness().metallic_roughness_texture);
-        }
-
-        if (material.get_normal_texture().index >= 0) {
-            callback(material.get_normal_texture());
-        }
-
-        if (material.get_occlusion_texture().index >= 0) {
-            callback(material.get_occlusion_texture());
-        }
-
-        if (material.get_emissive_texture().index >= 0) {
-            callback(material.get_emissive_texture());
-        }
-    }
-} // namespace
-
-
 vk::IndexType sandbox::gltf::to_vk_index_type(
     sandbox::gltf::accessor_type accessor_type,
     sandbox::gltf::component_type component_type)
@@ -438,66 +409,6 @@ vk::Format sandbox::gltf::stb_channels_count_to_vk_format(int32_t count)
         default:
             throw std::runtime_error("Bad components count");
     }
-}
-
-
-sandbox::hal::render::avk::descriptor_set_layout sandbox::gltf::create_material_textures_layout(
-    const sandbox::gltf::material& material)
-{
-    uint32_t textures_count = 0;
-
-    for_each_material_texture(material, [&textures_count](const auto& tex_data) {
-        textures_count++;
-    });
-
-    return avk::gen_descriptor_set_layout(textures_count, vk::DescriptorType::eCombinedImageSampler);
-}
-
-
-void sandbox::gltf::write_material_textures_descriptors(
-    const sandbox::gltf::material& material,
-    vk::DescriptorSet dst_set,
-    const gltf::vk_texture_atlas& tex_atlas)
-{
-    std::vector<vk::ImageView> vk_images{};
-    std::vector<vk::Sampler> vk_samplers{};
-
-    for_each_material_texture(material, [&vk_images, &vk_samplers, &tex_atlas](const gltf::material::texture_data& texture_data) {
-        const auto& curr_tex = tex_atlas.get_texture(texture_data.index);
-        vk_images.emplace_back(curr_tex.image_view);
-        vk_samplers.emplace_back(curr_tex.sampler);
-    });
-
-    return avk::write_texture_descriptors(dst_set, vk_images, vk_samplers);
-}
-
-
-void gltf::write_node_uniforms_descriptors(
-    const gltf::node& node,
-    vk::DescriptorSet dst_set,
-    vk::Buffer instance_data_buffer,
-    const gltf::vk_geometry_skins& geom_skins)
-{
-    if (node.get_mesh() < 0) {
-        return;
-    }
-
-    const auto& skin = node.get_skin() >= 0 ? geom_skins.get_skins()[node.get_skin()] : geom_skins.get_skins().back();
-
-    avk::write_buffer_descriptors(
-        dst_set,
-        {instance_data_buffer,
-         geom_skins.get_hierarchy_buffer().as<vk::Buffer>(),
-         geom_skins.get_skin_buffer().as<vk::Buffer>()},
-        {{node.get_mesh() * sizeof(instance_transform_data), sizeof(instance_transform_data)},
-         {0, geom_skins.get_hierarchy_transforms().size() * sizeof(geom_skins.get_hierarchy_transforms().front())},
-         {skin.offset, skin.size}});
-}
-
-
-sandbox::hal::render::avk::descriptor_set_layout gltf::create_primitive_uniforms_layout(const gltf::vk_primitive& primitive)
-{
-    return avk::gen_descriptor_set_layout(3, vk::DescriptorType::eUniformBuffer);
 }
 
 
