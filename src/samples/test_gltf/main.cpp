@@ -233,7 +233,6 @@ private:
                 pipeline_data curr_pipeline_data{};
                 const gltf::material& curr_material = primitive.get_material() < 0 ? materials.back() : materials[primitive.get_material()];
                 const gltf::vk_skin& curr_skin = node.get_skin() < 0 ? m_skins.get_skins().back() : m_skins.get_skins()[node.get_skin()];
-                spdlog::info("node skin: {0:d} count: {1:d}", node.get_skin(), curr_skin.count);
                 avk::graphics_pipeline_builder builder(m_pass.get_native_pass(), 0, 1);
 
                 builder.set_vertex_format(curr_vk_primitive->attributes, curr_vk_primitive->bindings)

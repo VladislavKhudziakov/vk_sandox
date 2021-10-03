@@ -21,6 +21,8 @@ public:
 
     void on_swapchain_reset(size_t width, size_t height) override
     {
+        width = std::max(width, size_t(1));
+        height = std::max(height, size_t(1));
         m_app->m_framebuffer_width = width;
         m_app->m_framebuffer_height = height;
         m_app->create_framebuffers(width, height);
