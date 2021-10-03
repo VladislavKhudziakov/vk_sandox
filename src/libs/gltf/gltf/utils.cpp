@@ -31,6 +31,12 @@ sandbox::gltf::accessor_type_value::accessor_type_value(const char* value)
         type = accessor_type::vec3;
     } else if (strcmp(ACCESSOR_TYPE_VEC4, value) == 0) {
         type = accessor_type::vec4;
+    } else if (strcmp(ACCESSOR_TYPE_MAT2, value) == 0) {
+        type = accessor_type::mat2;
+    } else if (strcmp(ACCESSOR_TYPE_MAT3, value) == 0) {
+        type = accessor_type::mat3;
+    } else if (strcmp(ACCESSOR_TYPE_MAT4, value) == 0) {
+        type = accessor_type::mat4;
     } else {
         throw std::runtime_error("Bad accessor type value " + std::string(value));
     }
@@ -309,27 +315,34 @@ std::string sandbox::gltf::to_string(sandbox::gltf::alpha_mode alpha_mode)
 }
 
 
+size_t sandbox::gltf::accessor_components_count(sandbox::gltf::accessor_type accessor_type)
+{
+    switch (accessor_type) {
+        case accessor_type::scalar:
+            return 1;
+        case accessor_type::vec2:
+            return 2;
+        case accessor_type::vec3:
+            return 3;
+        case accessor_type::vec4:
+            return 4;
+        case accessor_type::mat2:
+            return 2 * 2;
+        case accessor_type::mat3:
+            return 3 * 3;
+        case accessor_type::mat4:
+            return 4 * 4;
+    }
+
+    return 0;
+}
+
+
 size_t sandbox::gltf::get_buffer_element_size(
     sandbox::gltf::accessor_type accessor_type,
     sandbox::gltf::component_type component_type)
 {
-    switch (accessor_type) {
-        case accessor_type::scalar:
-            return get_component_type_size(component_type);
-        case accessor_type::vec2:
-            return 2 * get_component_type_size(component_type);
-        case accessor_type::vec3:
-            return 3 * get_component_type_size(component_type);
-        case accessor_type::vec4:
-            return 4 * get_component_type_size(component_type);
-        case accessor_type::mat2:
-            return 2 * 2 * get_component_type_size(component_type);
-        case accessor_type::mat3:
-            return 3 * 3 * get_component_type_size(component_type);
-        case accessor_type::mat4:
-            return 4 * 4 * get_component_type_size(component_type);
-    }
-    return 0;
+    return accessor_components_count(accessor_type) * get_component_type_size(component_type);
 }
 
 

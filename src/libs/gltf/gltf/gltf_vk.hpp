@@ -21,18 +21,20 @@ namespace sandbox::gltf
 
     class vk_geometry
     {
-    public:
-        static void create_meshes_data(
-            const gltf::model& mdl,
-            std::vector<std::vector<vk_primitive>>& primitives,
-            hal::render::avk::vma_buffer& result_v_staging_buffer,
-            hal::render::avk::vma_buffer& result_v_dst_buffer,
-            hal::render::avk::vma_buffer& result_i_staging_buffer,
-            hal::render::avk::vma_buffer& result_i_dst_buffer,
-            vk::CommandBuffer& command_buffer,
-            uint32_t queue_family);
+        friend class vk_geometry_builder;
 
-        static vk_geometry from_gltf_model(const gltf::model& mdl, vk::CommandBuffer& command_buffer, uint32_t queue_family);
+    public:
+//        static void create_meshes_data(
+//            const gltf::model& mdl,
+//            std::vector<std::vector<vk_primitive>>& primitives,
+//            hal::render::avk::vma_buffer& result_v_staging_buffer,
+//            hal::render::avk::vma_buffer& result_v_dst_buffer,
+//            hal::render::avk::vma_buffer& result_i_staging_buffer,
+//            hal::render::avk::vma_buffer& result_i_dst_buffer,
+//            vk::CommandBuffer& command_buffer,
+//            uint32_t queue_family);
+//
+//        static vk_geometry from_gltf_model(const gltf::model& mdl, vk::CommandBuffer& command_buffer, uint32_t queue_family);
 
         vk_geometry() = default;
 
@@ -52,14 +54,6 @@ namespace sandbox::gltf
         void clear_staging_resources();
 
     private:
-        struct bone_data
-        {
-            glm::mat4 inv_bind_pose{1};
-            alignas(sizeof(float) * 4) uint32_t joint{std::numeric_limits<uint32_t>::max()};
-        };
-
-        static_assert(sizeof(bone_data) == sizeof(float) * 4 * 4 + sizeof(float) * 4);
-
         std::vector<std::vector<vk_primitive>> m_primitives{};
 
         hal::render::avk::vma_buffer m_vertex_buffer{};
@@ -69,10 +63,37 @@ namespace sandbox::gltf
         hal::render::avk::vma_buffer m_index_staging_buffer{};
     };
 
+    class vk_geometry_builder
+    {
+    public:
+        vk_geometry_builder() = default;
+        vk_geometry_builder& set_fixed_vertex_format(const std::array<vk::Format, 8>&);
+        vk_geometry create_with_fixed_format(const gltf::model& mdl, vk::CommandBuffer& command_buffer, uint32_t queue_family);
+        vk_geometry create(const gltf::model& mdl, vk::CommandBuffer& command_buffer, uint32_t queue_family);
+
+    private:
+        void copy_attribute_data(
+            const gltf::primitive::vertex_attribute& attribute,
+            vk::Format desired_vk_format,
+            uint64_t vtx_size,
+            uint64_t offset,
+            const uint8_t* dst);
+
+        std::pair<hal::render::avk::vma_buffer, hal::render::avk::vma_buffer> create_index_buffer(
+            const gltf::model& mdl,
+            size_t index_buffer_size,
+            const std::vector<std::vector<vk_primitive>>& meshes,
+            vk::CommandBuffer& command_buffer,
+            uint32_t queue_famil);
+
+        std::optional<std::array<vk::Format, 8>> m_fixed_format{};
+    };
+
     struct vk_skin
     {
         uint64_t offset{0};
         uint64_t size{0};
+        uint64_t count{0};
     };
 
 
@@ -104,13 +125,13 @@ namespace sandbox::gltf
         const hal::render::avk::vma_buffer& get_skin_buffer() const;
 
     private:
-        struct bone_data
+        struct joint_data
         {
             glm::mat4 inv_bind_pose{1};
             alignas(sizeof(float) * 4) uint32_t joint{std::numeric_limits<uint32_t>::max()};
         };
 
-        static_assert(sizeof(bone_data) == sizeof(float) * 4 * 4 + sizeof(float) * 4);
+        static_assert(sizeof(joint_data) == sizeof(float) * 4 * 4 + sizeof(float) * 4);
 
         std::vector<vk_skin> m_skins{};
         std::vector<glm::mat4> m_default_hierarchy_transforms{};
@@ -158,65 +179,4 @@ namespace sandbox::gltf
 
         std::vector<hal::render::avk::vma_buffer> m_staging_resources{};
     };
-
-    //    class vk_pipeline
-    //    {
-    //    public:
-    //        vk_pipeline(const vk_pipeline&) = delete;
-    //        vk_pipeline& operator=(const vk_pipeline&) = delete;
-    //        vk_pipeline(vk_pipeline&&) noexcept = default;
-    //        vk_pipeline& operator=(vk_pipeline&&) noexcept = default;
-    //
-    //        void bind(vk::CommandBuffer& command_buffer, const std::vector<VkDeviceSize>& dyn_offsets);
-    //
-    //        vk::Pipeline get_pipeline() const;
-    //        vk::DescriptorPool get_descriptor_pool() const;
-    //        vk::PipelineLayout get_pipeline_layout() const;
-    //        const vk::DescriptorSet* get_descriptor_sets(uint32_t&) const;
-    //
-    //    private:
-    //        vk_pipeline() = default;
-    //
-    //        friend class vk_pipeline_builder;
-    //
-    //        hal::render::avk::descriptor_pool m_descriptor_pool{};
-    //        hal::render::avk::descriptor_set_list m_descriptor_set{};
-    //        hal::render::avk::pipeline_layout m_layouts{};
-    //        hal::render::avk::graphics_pipeline m_pipeline_handler{};
-    //        std::vector<VkDeviceSize> m_dyn_offsets{};
-    //    };
-    //
-    //
-    //    class vk_pipeline_builder
-    //    {
-    //    public:
-    //        vk_pipeline_builder(
-    //            const vk_primitive& primitive,
-    //            vk::RenderPass pass,
-    //            uint32_t subpass);
-    //
-    //        vk_pipeline_builder& set_shaders(const std::vector<vk::ShaderModule>&);
-    //        vk_pipeline_builder& use_hierarchy(bool);
-    //        vk_pipeline_builder& use_skinning(bool);
-    //        vk_pipeline_builder& use_back_faces(bool);
-    //        vk_pipeline_builder& enable_z_write(bool);
-    //        vk_pipeline_builder& enable_z_test(bool);
-    //        vk_pipeline_builder& enable_color_write(bool);
-    //        vk_pipeline_builder& set_polygon_mode(vk::PolygonMode);
-    //        vk_pipeline_builder& set_samples_count(vk::SampleCountFlagBits);
-    //        vk_pipeline_builder& add_textures_descriptors(const gltf::material& material, const vk_texture_atlas&);
-    //        vk_pipeline_builder& add_textures_descriptors(const std::vector<vk::ImageView>&);
-    //        vk_pipeline_builder& add_buffer_descriptors(const gltf::node&, const vk_geometry&);
-    //        vk_pipeline_builder& add_constant_data(uint8_t* data, size_t size);
-    //
-    //        vk_pipeline_builder& add_buffer_descriptors(
-    //            const std::vector<vk::Buffer>&,
-    //            const std::vector<std::pair<VkDeviceSize, VkDeviceSize>>&,
-    //            vk::DescriptorType);
-    //
-    //        vk_pipeline generate_pipeline();
-    //    private:
-    //        vk::RenderPass m_pass;
-    //        uint32_t m_subpass;
-    //    };
 } // namespace sandbox::gltf

@@ -412,6 +412,76 @@ vk::Format sandbox::gltf::stb_channels_count_to_vk_format(int32_t count)
 }
 
 
+std::pair<gltf::accessor_type, gltf::component_type> gltf::from_vk_format(vk::Format format)
+{
+    switch (format) {
+        case vk::Format::eR8Sint:
+            return {accessor_type::scalar, component_type::signed_byte};
+        case vk::Format::eR8G8Sint:
+            return {accessor_type::vec2, component_type::signed_byte};
+        case vk::Format::eR8G8B8Sint:
+            return {accessor_type::vec3, component_type::signed_byte};
+        case vk::Format::eR8G8B8A8Sint:
+            return {accessor_type::vec4, component_type::signed_byte};
+
+        case vk::Format::eR8Uint:
+            return {accessor_type::scalar, component_type::unsigned_byte};
+        case vk::Format::eR8G8Uint:
+            return {accessor_type::vec2, component_type::unsigned_byte};
+        case vk::Format::eR8G8B8Uint:
+            return {accessor_type::vec3, component_type::unsigned_byte};
+        case vk::Format::eR8G8B8A8Uint:
+            return {accessor_type::vec4, component_type::unsigned_byte};
+
+        case vk::Format::eR16Sint:
+            return {accessor_type::scalar, component_type::signed_short};
+        case vk::Format::eR16G16Sint:
+            return {accessor_type::vec2, component_type::signed_short};
+        case vk::Format::eR16G16B16Sint:
+            return {accessor_type::vec3, component_type::signed_short};
+        case vk::Format::eR16G16B16A16Sint:
+            return {accessor_type::vec4, component_type::signed_short};
+
+        case vk::Format::eR16Uint:
+            return {accessor_type::scalar, component_type::unsigned_short};
+        case vk::Format::eR16G16Uint:
+            return {accessor_type::vec2, component_type::unsigned_short};
+        case vk::Format::eR16G16B16Uint:
+            return {accessor_type::vec3, component_type::unsigned_short};
+        case vk::Format::eR16G16B16A16Uint:
+            return {accessor_type::vec4, component_type::unsigned_short};
+
+        case vk::Format::eA2B10G10R10SintPack32:
+            [[fallthrough]];
+        case vk::Format::eA2B10G10R10SnormPack32:
+            [[fallthrough]];
+        case vk::Format::eA2R10G10B10UintPack32:
+            [[fallthrough]];
+        case vk::Format::eA2B10G10R10UnormPack32:
+            [[fallthrough]];
+        case vk::Format::eR32Uint:
+            return {accessor_type::scalar, component_type::unsigned_int};
+        case vk::Format::eR32G32Uint:
+            return {accessor_type::vec2, component_type::unsigned_int};
+        case vk::Format::eR32G32B32Uint:
+            return {accessor_type::vec3, component_type::unsigned_int};
+        case vk::Format::eR32G32B32A32Uint:
+            return {accessor_type::vec4, component_type::unsigned_int};
+
+        case vk::Format::eR32Sfloat:
+            return {accessor_type::scalar, component_type::float32};
+        case vk::Format::eR32G32Sfloat:
+            return {accessor_type::vec2, component_type::float32};
+        case vk::Format::eR32G32B32Sfloat:
+            return {accessor_type::vec3, component_type::float32};
+        case vk::Format::eR32G32B32A32Sfloat:
+            return {accessor_type::vec4, component_type::float32};
+        default:
+            throw std::runtime_error("Unsupported type.");
+    }
+}
+
+
 sandbox::gltf::vk_material_info sandbox::gltf::vk_material_info::from_gltf_material(const sandbox::gltf::material& material)
 {
     auto get_texture_cords_set = [](const gltf::material::texture_data& tex_data) {

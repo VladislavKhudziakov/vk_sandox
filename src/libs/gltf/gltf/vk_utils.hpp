@@ -52,6 +52,8 @@ namespace sandbox::gltf
     };
 
     vk::Format to_vk_format(accessor_type accessor_type, component_type component_type);
+    std::pair<accessor_type, component_type> from_vk_format(vk::Format);
+
     vk::IndexType to_vk_index_type(accessor_type accessor_type, component_type component_type);
     std::pair<vk::Filter, vk::SamplerMipmapMode> to_vk_sampler_filter(sampler_filter_type filter);
     vk::SamplerAddressMode to_vk_sampler_wrap(sampler_wrap_type wrap);

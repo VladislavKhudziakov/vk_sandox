@@ -260,6 +260,7 @@ namespace sandbox::gltf
 
 
     size_t get_component_type_size(component_type component_type);
+    size_t accessor_components_count(sandbox::gltf::accessor_type accessor_type);
     size_t get_buffer_element_size(accessor_type accessor_type, component_type component_type);
 
     std::string to_string(accessor_type);
@@ -281,9 +282,8 @@ namespace sandbox::gltf
         auto vector_values = value.template get<std::vector<GlmValueT>>();
 
         T result{};
-        assert(vector_values.size() * sizeof(vector_values.front()) <= sizeof(T));
-
-        std::copy(vector_values.begin(), vector_values.end(), glm::value_ptr(result));
+        size_t elements_count = sizeof(T) / sizeof(GlmValueT);
+        std::copy(vector_values.begin(), vector_values.begin() + std::min(elements_count, vector_values.size()), glm::value_ptr(result));
         return result;
     }
 

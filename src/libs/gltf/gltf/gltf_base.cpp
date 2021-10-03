@@ -62,6 +62,42 @@ int32_t primitive::get_indices() const
 }
 
 
+int32_t primitive::attribute_at_path(attribute_path path) const
+{
+    auto pit = std::find(m_attributes_paths.begin(), m_attributes_paths.end(), path);
+
+    if (pit == m_attributes_paths.end()) {
+        return -1;
+    }
+
+    return static_cast<int32_t>(m_attributes[std::distance(m_attributes_paths.begin(), pit)]);
+}
+
+
+primitive::vertex_attribute primitive::attribute_at_path(const model& model, attribute_path path) const
+{
+    auto accessor = attribute_at_path(path);
+
+    if (accessor < 0) {
+        return {};
+    }
+
+    const std::vector<gltf::accessor>& accessors = model.get_accessors();
+    const std::vector<buffer_view>& buffer_views = model.get_buffer_views();
+    const std::vector<buffer>& buffers = model.get_buffers();
+
+    const auto& attr_accessor = accessors[accessor];
+    const auto* data_ptr = attr_accessor.get_data(buffers.data(), buffers.size(), buffer_views.data(), buffer_views.size());
+
+    return {
+        .accessor = accessor,
+        .accessor_type = attr_accessor.get_type(),
+        .component_type = attr_accessor.get_component_type(),
+        .elements_count = attr_accessor.get_count(),
+        .attribute_data = attr_accessor.get_data(buffers.data(), buffers.size(), buffer_views.data(), buffer_views.size())};
+}
+
+
 mesh::mesh(const nlohmann::json& mesh_json)
 {
     m_primitives.reserve(mesh_json["primitives"].size());
@@ -532,7 +568,7 @@ accessor::accessor(const nlohmann::json& accessor_json)
     , m_type(extract_json_data<std::string>(accessor_json, "type"))
     , m_count(extract_json_data<uint64_t>(accessor_json, "count"))
     , m_max(extract_json_data<glm::vec4, false>(accessor_json, "max", glm::vec4{}, extract_glm_value<glm::vec4>))
-    , m_min(extract_json_data<glm::vec4, false>(accessor_json, "max", glm::vec4{}, extract_glm_value<glm::vec4>))
+    , m_min(extract_json_data<glm::vec4, false>(accessor_json, "min", glm::vec4{}, extract_glm_value<glm::vec4>))
 {
 }
 

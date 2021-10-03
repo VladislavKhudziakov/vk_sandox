@@ -1,7 +1,6 @@
 #include "gltf_vk.hpp"
 
 #include <gltf/vk_utils.hpp>
-
 #include <render/vk/utils.hpp>
 
 #include <stb/stb_image.h>
@@ -11,24 +10,144 @@
 using namespace sandbox;
 using namespace sandbox::hal::render;
 
-
-gltf::vk_geometry gltf::vk_geometry::from_gltf_model(
-    const gltf::model& mdl, vk::CommandBuffer& command_buffer, uint32_t queue_family)
+namespace
 {
-    gltf::vk_geometry new_geom{};
+    template<typename T>
+    struct attribute_converter;
 
-    create_meshes_data(
-        mdl,
-        new_geom.m_primitives,
-        new_geom.m_vertex_staging_buffer,
-        new_geom.m_vertex_buffer,
-        new_geom.m_index_staging_buffer,
-        new_geom.m_index_buffer,
-        command_buffer,
-        queue_family);
+    template<size_t ElementCount, typename ElementType, glm::qualifier ElementQualifier>
+    struct attribute_converter<glm::vec<ElementCount, ElementType, ElementQualifier>>
+    {
+        using VecT = glm::vec<ElementCount, ElementType, glm::qualifier::mediump>;
 
-    return new_geom;
-}
+        vk::Format desired_vk_format{};
+
+        VecT operator()(
+            const uint8_t* data,
+            gltf::accessor_type actual_accessor_type,
+            gltf::component_type actual_component_type,
+            gltf::accessor_type /* ignored */,
+            gltf::component_type /* ignored */) const
+        {
+            VecT result{};
+
+            const auto actual_el_count = accessor_components_count(actual_accessor_type);
+            if (actual_el_count > ElementCount) {
+                throw std::runtime_error("Types are not convertible.");
+            }
+
+            for (size_t i = 0; i < ElementCount; ++i) {
+                if (i < actual_el_count) {
+                    result[i] = convert_element(actual_component_type, i, data);
+                } else {
+                    // just fill with zeros
+                    result[i] = ElementType{0};
+                }
+            }
+            return result;
+        }
+
+        ElementType convert_element(gltf::component_type actual_component_type, size_t element_index, const uint8_t* data) const
+        {
+            // TODO: add pack/unpack elements data relative actual vk_format
+            if constexpr (std::is_same_v<ElementType, float>) {
+                switch (actual_component_type) {
+                    case gltf::component_type::float32:
+                        return reinterpret_cast<const float*>(data)[element_index];
+                    default:
+                        throw std::runtime_error("Elements converting temporary unsupported.");
+                }
+            } else if constexpr (std::is_same_v<ElementType, uint32_t>) {
+                switch (actual_component_type) {
+                    case gltf::component_type::unsigned_int:
+                        return reinterpret_cast<const uint32_t*>(data)[element_index];
+                    case gltf::component_type::unsigned_short:
+                        return uint32_t(reinterpret_cast<const uint16_t*>(data)[element_index]);
+                    case gltf::component_type::signed_short:
+                        return uint32_t(reinterpret_cast<const int16_t*>(data)[element_index]);
+                    case gltf::component_type::signed_byte:
+                        return uint32_t(reinterpret_cast<const int8_t*>(data)[element_index]);
+                    case gltf::component_type::unsigned_byte:
+                        return uint32_t(data[element_index]);
+                    default:
+                        throw std::runtime_error("Unsupported convert type.");
+                }
+            } else if constexpr (std::is_same_v<ElementType, int16_t>) {
+                switch (actual_component_type) {
+                    case gltf::component_type::signed_short:
+                        return reinterpret_cast<const int16_t*>(data)[element_index];
+                    default:
+                        throw std::runtime_error("Elements converting temporary unsupported.");
+                }
+            } else if constexpr (std::is_same_v<ElementType, uint16_t>) {
+                switch (actual_component_type) {
+                    case gltf::component_type::unsigned_short:
+                        return reinterpret_cast<const uint16_t*>(data)[element_index];
+                    default:
+                        throw std::runtime_error("Elements converting temporary unsupported.");
+                }
+            } else if constexpr (std::is_same_v<ElementType, int8_t>) {
+                switch (actual_component_type) {
+                    case gltf::component_type::signed_byte:
+                        return reinterpret_cast<const int8_t*>(data)[element_index];
+                    default:
+                        throw std::runtime_error("Elements converting temporary unsupported.");
+                }
+            } else if constexpr (std::is_same_v<ElementType, uint8_t>) {
+                switch (actual_component_type) {
+                    case gltf::component_type::unsigned_byte:
+                        return data[element_index];
+                    default:
+                        throw std::runtime_error("Elements converting temporary unsupported.");
+                }
+            }
+        }
+    };
+
+
+    template<size_t ElementCount, typename ElementT>
+    void copy_attribute_data(
+        const gltf::primitive::vertex_attribute& attribute,
+        vk::Format desired_vk_format,
+        gltf::accessor_type desired_type,
+        gltf::component_type desired_component_type,
+        uint64_t vtx_size,
+        uint64_t offset,
+        const uint8_t* dst)
+    {
+        using T = glm::vec<ElementCount, ElementT>;
+        attribute.for_each_element<T>(
+            [dst, vtx_size, offset](T v, uint32_t index) {
+                if constexpr (ElementCount == 1) {
+                    std::memcpy((void*) (dst + vtx_size * index + offset), &v.x, sizeof(v));
+                } else {
+                    std::memcpy((void*) (dst + vtx_size * index + offset), glm::value_ptr(v), sizeof(v));
+                }
+            },
+            desired_type,
+            desired_component_type,
+            attribute_converter<T>{desired_vk_format});
+    }
+} // namespace
+
+
+//gltf::vk_geometry gltf::vk_geometry::from_gltf_model(
+//    const gltf::model& mdl, vk::CommandBuffer& command_buffer, uint32_t queue_family)
+//{
+//    gltf::vk_geometry new_geom{};
+//
+//    create_meshes_data(
+//        mdl,
+//        new_geom.m_primitives,
+//        new_geom.m_vertex_staging_buffer,
+//        new_geom.m_vertex_buffer,
+//        new_geom.m_index_staging_buffer,
+//        new_geom.m_index_buffer,
+//        command_buffer,
+//        queue_family);
+//
+//    return new_geom;
+//}
 
 
 vk::Buffer gltf::vk_geometry::get_vertex_buffer() const
@@ -53,149 +172,6 @@ void gltf::vk_geometry::clear_staging_resources()
 const std::vector<gltf::vk_primitive>& gltf::vk_geometry::get_primitives(uint32_t mesh) const
 {
     return m_primitives[mesh];
-}
-
-
-void gltf::vk_geometry::create_meshes_data(
-    const gltf::model& mdl,
-    std::vector<std::vector<vk_primitive>>& primitives,
-    avk::vma_buffer& result_v_staging_buffer,
-    avk::vma_buffer& result_v_dst_buffer,
-    avk::vma_buffer& result_i_staging_buffer,
-    avk::vma_buffer& result_i_dst_buffer,
-    vk::CommandBuffer& command_buffer,
-    uint32_t queue_family)
-{
-    primitives.clear();
-    primitives.reserve(mdl.get_meshes().size());
-
-    const auto& accessors = mdl.get_accessors();
-    const auto& buffer_views = mdl.get_buffer_views();
-    const auto& buffers = mdl.get_buffers();
-
-    uint32_t vertex_buffer_size = 0;
-    uint32_t index_buffer_size = 0;
-
-    for (const auto& gltf_mesh : mdl.get_meshes()) {
-        auto& new_mesh = primitives.emplace_back();
-        new_mesh.reserve(gltf_mesh.get_primitives().size());
-
-        for (const auto& gltf_primitive : gltf_mesh.get_primitives()) {
-            auto attrs_bindings_size = gltf_primitive.get_attributes().size();
-
-            auto& new_primitive = new_mesh.emplace_back();
-            new_primitive.attributes.reserve(attrs_bindings_size);
-            new_primitive.bindings.reserve(attrs_bindings_size);
-            new_primitive.vertex_buffer_offset = vertex_buffer_size;
-
-            uint32_t curr_attr_binding_index = 0;
-
-            for (const auto& attr : gltf_primitive.get_attributes()) {
-                const auto& attr_accessor = accessors[attr];
-                if (new_primitive.vertices_count == 0) {
-                    new_primitive.vertices_count = attr_accessor.get_count();
-                } else {
-                    if (new_primitive.vertices_count != attr_accessor.get_count()) {
-                        throw std::runtime_error("Bad primitive");
-                    }
-                }
-
-                const auto vert_attr_fmt = to_vk_format(attr_accessor.get_type(), attr_accessor.get_component_type());
-
-                new_primitive.attributes.emplace_back(vk::VertexInputAttributeDescription{
-                    .location = curr_attr_binding_index,
-                    .binding = curr_attr_binding_index,
-                    .format = vert_attr_fmt,
-                    .offset = vertex_buffer_size,
-                });
-
-                new_primitive.bindings.emplace_back(vk::VertexInputBindingDescription{
-                    .binding = curr_attr_binding_index,
-                    .stride = avk::get_format_info(static_cast<VkFormat>(vert_attr_fmt)).size,
-                    .inputRate = vk::VertexInputRate::eVertex,
-                });
-
-                curr_attr_binding_index++;
-
-                vertex_buffer_size += attr_accessor.get_data_size();
-            }
-
-            if (gltf_primitive.get_indices() >= 0) {
-                const auto& indices_accessor = accessors[gltf_primitive.get_indices()];
-                new_primitive.index_type = to_vk_index_type(indices_accessor.get_type(), indices_accessor.get_component_type());
-                new_primitive.index_buffer_offset = index_buffer_size;
-                new_primitive.indices_count = indices_accessor.get_count();
-
-                index_buffer_size += indices_accessor.get_data_size();
-            }
-        }
-    }
-
-    auto [vertex_staging_buffer, vertex_buffer] = avk::gen_buffer(
-        command_buffer,
-        queue_family,
-        vertex_buffer_size,
-        vk::BufferUsageFlagBits::eVertexBuffer,
-        vk::PipelineStageFlagBits::eVertexInput,
-        vk::AccessFlagBits::eVertexAttributeRead,
-        [&](const uint8_t* dst) {
-            auto vk_mesh = primitives.begin();
-            for (const auto& gltf_mesh : mdl.get_meshes()) {
-                auto vk_primitive = vk_mesh->begin();
-                for (const auto& gltf_primitive : gltf_mesh.get_primitives()) {
-                    auto vk_attr = vk_primitive->attributes.begin();
-                    for (const auto& attr : gltf_primitive.get_attributes()) {
-                        const auto& accessor = accessors[attr];
-                        std::memcpy(
-                            (void*) (dst + vk_primitive->vertex_buffer_offset + vk_attr->offset),
-                            accessor.get_data(
-                                buffers.data(),
-                                buffers.size(),
-                                buffer_views.data(),
-                                buffer_views.size()),
-                            accessor.get_data_size());
-                        vk_attr++;
-                    }
-                    vk_primitive++;
-                }
-                vk_mesh++;
-            }
-        });
-
-    auto [index_staging_buffer, index_buffer] = avk::gen_buffer(
-        command_buffer,
-        queue_family,
-        index_buffer_size,
-        vk::BufferUsageFlagBits::eIndexBuffer,
-        vk::PipelineStageFlagBits::eVertexInput,
-        vk::AccessFlagBits::eIndexRead,
-        [&](const uint8_t* dst) {
-            auto vk_mesh = primitives.begin();
-            for (const auto& gltf_mesh : mdl.get_meshes()) {
-                auto vk_primitive = vk_mesh->begin();
-                for (const auto& gltf_primitive : gltf_mesh.get_primitives()) {
-                    for (const auto& attr : gltf_primitive.get_attributes()) {
-                        if (gltf_primitive.get_indices() >= 0) {
-                            const auto& accessor = accessors[gltf_primitive.get_indices()];
-                            std::memcpy(
-                                (void*) (dst + vk_primitive->index_buffer_offset),
-                                accessor.get_data(
-                                    buffers.data(),
-                                    buffers.size(),
-                                    buffer_views.data(),
-                                    buffer_views.size()),
-                                accessor.get_data_size());
-                        }
-                    }
-                    vk_primitive++;
-                }
-            }
-        });
-
-    result_v_dst_buffer = std::move(vertex_buffer);
-    result_v_staging_buffer = std::move(vertex_staging_buffer);
-    result_i_dst_buffer = std::move(index_buffer);
-    result_i_staging_buffer = std::move(index_staging_buffer);
 }
 
 
@@ -367,8 +343,8 @@ void gltf::vk_geometry_skins::create_skins_data(
     const auto& buffer_views = mdl.get_buffer_views();
     const auto& buffers = mdl.get_buffers();
 
-    std::vector<std::vector<bone_data>> bones_data{};
-    bones_data.reserve(mdl.get_skins().size() + 1);
+    std::vector<std::vector<joint_data>> joints_data{};
+    joints_data.reserve(mdl.get_skins().size() + 1);
 
     skins.clear();
     skins.reserve(mdl.get_skins().size() + 1);
@@ -378,44 +354,50 @@ void gltf::vk_geometry_skins::create_skins_data(
     for (const auto& skin : mdl.get_skins()) {
         const auto& joints = skin.get_joints();
 
-        auto& new_bones_data = bones_data.emplace_back();
+        auto& new_joints_data = joints_data.emplace_back();
         const auto inv_bind_poses_accessor = accessors[skin.get_inv_bind_matrices()];
 
         const auto* inv_bind_poses = reinterpret_cast<const glm::mat4*>(
             inv_bind_poses_accessor.get_data(buffers.data(), buffers.size(), buffer_views.data(), buffer_views.size()));
 
-        new_bones_data.reserve(joints.size());
+        assert(joints.size() == inv_bind_poses_accessor.get_count());
+
+        new_joints_data.reserve(joints.size());
 
         for (const auto joint : joints) {
-            new_bones_data.emplace_back(bone_data{
+            new_joints_data.emplace_back(joint_data{
                 .inv_bind_pose = *inv_bind_poses++,
                 .joint = static_cast<uint32_t>(joint)});
         }
 
-        const auto skin_data_size = new_bones_data.size() * sizeof(new_bones_data.front());
+        const auto skin_data_size = new_joints_data.size() * sizeof(new_joints_data.front());
 
         skins.emplace_back(vk_skin{
             .offset = skins_buffer_size,
-            .size = skin_data_size});
+            .size = skin_data_size,
+            .count = joints.size()});
 
         skins_buffer_size += skin_data_size;
     }
 
-    bones_data.emplace_back();
+    joints_data.emplace_back();
+    joints_data.back().emplace_back();
     skins.emplace_back(vk_skin{
         .offset = skins_buffer_size,
-        .size = sizeof(bone_data)});
+        .size = sizeof(joint_data)});
+    skins_buffer_size += sizeof(joint_data);
 
     auto [staging_buffer, dst_buffer] = avk::gen_buffer(
         command_buffer,
         queue_family,
-        bones_data.size() * sizeof(bone_data),
+        skins_buffer_size,
         vk::BufferUsageFlagBits::eUniformBuffer,
         vk::PipelineStageFlagBits::eVertexShader,
         vk::AccessFlagBits::eUniformRead,
         [&](const uint8_t* dst) {
+            auto curr_joints = joints_data.begin();
             for (const auto& skin : skins) {
-                std::memcpy((void*) (dst + skin.offset), bones_data.data(), skin.size);
+                std::memcpy((void*) (dst + skin.offset), curr_joints++->data(), skin.size);
             }
         });
 
@@ -488,4 +470,363 @@ const hal::render::avk::vma_buffer& gltf::vk_geometry_skins::get_skin_buffer() c
 const hal::render::avk::vma_buffer& gltf::vk_geometry_skins::get_hierarchy_staging_buffer() const
 {
     return m_hierarchy_staging_buffer;
+}
+
+
+gltf::vk_geometry_builder& gltf::vk_geometry_builder::set_fixed_vertex_format(
+    const std::array<vk::Format, 8>& fmt)
+{
+    m_fixed_format = fmt;
+    return *this;
+}
+
+
+gltf::vk_geometry gltf::vk_geometry_builder::create_with_fixed_format(
+    const gltf::model& mdl,
+    vk::CommandBuffer& command_buffer,
+    uint32_t queue_family)
+{
+    if (!m_fixed_format) {
+        throw std::runtime_error("Fixed vertex format wasn't settled.");
+    }
+
+    std::vector<vk::VertexInputAttributeDescription> attributes{};
+    std::vector<vk::VertexInputBindingDescription> bindings{};
+
+    attributes.reserve(m_fixed_format->size());
+    bindings.reserve(1);
+
+    uint32_t vertex_size = 0;
+    uint32_t attribute_location = 0;
+
+    for (const vk::Format vk_fmt : *m_fixed_format) {
+        attributes.emplace_back(vk::VertexInputAttributeDescription{
+            .location = attribute_location++,
+            .binding = 0,
+            .format = vk_fmt,
+            .offset = vertex_size});
+
+        vertex_size += avk::get_format_info(static_cast<VkFormat>(vk_fmt)).size;
+    }
+
+    bindings.emplace_back(vk::VertexInputBindingDescription{
+        .binding = 0,
+        .stride = vertex_size,
+        .inputRate = vk::VertexInputRate::eVertex});
+
+    gltf::vk_geometry new_geometry{};
+
+    const auto& accessors = mdl.get_accessors();
+    const auto& buffer_views = mdl.get_buffer_views();
+    const auto& buffers = mdl.get_buffers();
+
+    uint32_t vertex_buffer_size = 0;
+    uint32_t index_buffer_size = 0;
+
+    std::vector<std::vector<vk_primitive>> meshes{};
+    meshes.reserve(mdl.get_meshes().size());
+
+    for (const auto& gltf_mesh : mdl.get_meshes()) {
+        auto& new_mesh = meshes.emplace_back();
+        new_mesh.reserve(gltf_mesh.get_primitives().size());
+
+        for (const auto& gltf_primitive : gltf_mesh.get_primitives()) {
+            auto& new_primitive = new_mesh.emplace_back();
+            new_primitive.attributes = attributes;
+            new_primitive.bindings = bindings;
+            const auto& vertices_accessor = accessors[gltf_primitive.get_attributes().front()];
+            new_primitive.vertices_count = vertices_accessor.get_count();
+            new_primitive.vertex_buffer_offset = vertex_buffer_size;
+            vertex_buffer_size += new_primitive.vertices_count * vertex_size;
+
+            if (gltf_primitive.get_indices() >= 0) {
+                const auto& indices_accessor = accessors[gltf_primitive.get_indices()];
+                new_primitive.index_type = to_vk_index_type(indices_accessor.get_type(), indices_accessor.get_component_type());
+                new_primitive.index_buffer_offset = index_buffer_size;
+                new_primitive.indices_count = indices_accessor.get_count();
+                index_buffer_size += indices_accessor.get_data_size();
+            }
+        }
+    }
+
+    auto [vertex_staging_buffer, vertex_buffer] = avk::gen_buffer(
+        command_buffer,
+        queue_family,
+        vertex_buffer_size,
+        vk::BufferUsageFlagBits::eVertexBuffer,
+        vk::PipelineStageFlagBits::eVertexInput,
+        vk::AccessFlagBits::eVertexAttributeRead,
+        [&](const uint8_t* dst) {
+            auto vk_mesh = meshes.begin();
+            for (const auto& gltf_mesh : mdl.get_meshes()) {
+                auto vk_primitive = vk_mesh->begin();
+                for (const auto& gltf_primitive : gltf_mesh.get_primitives()) {
+                    auto primitive_dst_ptr = dst + vk_primitive->vertex_buffer_offset;
+                    uint32_t attr_offset = 0;
+
+                    for (uint32_t i = 0; i < m_fixed_format->size(); ++i) {
+                        auto curr_path = static_cast<attribute_path>(i);
+                        const auto attribute = gltf_primitive.attribute_at_path(mdl, static_cast<attribute_path>(i));
+                        copy_attribute_data(attribute, m_fixed_format->at(i), vertex_size, attr_offset, primitive_dst_ptr);
+                        attr_offset += avk::get_format_info(static_cast<VkFormat>(m_fixed_format->at(i))).size;
+                    }
+                }
+                vk_mesh++;
+            }
+        });
+
+    auto [index_staging_buffer, index_buffer] = create_index_buffer(mdl, index_buffer_size, meshes, command_buffer, queue_family);
+
+    new_geometry.m_primitives = std::move(meshes);
+    new_geometry.m_vertex_staging_buffer = std::move(vertex_staging_buffer);
+    new_geometry.m_vertex_buffer = std::move(vertex_buffer);
+    new_geometry.m_index_staging_buffer = std::move(index_staging_buffer);
+    new_geometry.m_index_buffer = std::move(index_buffer);
+
+    return new_geometry;
+}
+
+
+gltf::vk_geometry gltf::vk_geometry_builder::create(
+    const gltf::model& mdl,
+    vk::CommandBuffer& command_buffer,
+    uint32_t queue_family)
+{
+    gltf::vk_geometry new_geometry;
+
+    std::vector<std::vector<vk_primitive>> meshes;
+
+    meshes.clear();
+    meshes.reserve(mdl.get_meshes().size());
+
+    const auto& accessors = mdl.get_accessors();
+    const auto& buffer_views = mdl.get_buffer_views();
+    const auto& buffers = mdl.get_buffers();
+
+    uint32_t vertex_buffer_size = 0;
+    uint32_t index_buffer_size = 0;
+
+    for (const auto& gltf_mesh : mdl.get_meshes()) {
+        auto& new_mesh = meshes.emplace_back();
+        new_mesh.reserve(gltf_mesh.get_primitives().size());
+
+        for (const auto& gltf_primitive : gltf_mesh.get_primitives()) {
+            auto attrs_bindings_size = gltf_primitive.get_attributes().size();
+
+            auto& new_primitive = new_mesh.emplace_back();
+            new_primitive.attributes.reserve(attrs_bindings_size);
+            new_primitive.bindings.reserve(attrs_bindings_size);
+            new_primitive.vertex_buffer_offset = vertex_buffer_size;
+
+            uint32_t curr_attr_binding_index = 0;
+
+            for (const auto& attr : gltf_primitive.get_attributes()) {
+                const auto& attr_accessor = accessors[attr];
+                if (new_primitive.vertices_count == 0) {
+                    new_primitive.vertices_count = attr_accessor.get_count();
+                } else {
+                    if (new_primitive.vertices_count != attr_accessor.get_count()) {
+                        throw std::runtime_error("Bad primitive");
+                    }
+                }
+
+                const auto vert_attr_fmt = to_vk_format(attr_accessor.get_type(), attr_accessor.get_component_type());
+
+                new_primitive.attributes.emplace_back(vk::VertexInputAttributeDescription{
+                    .location = curr_attr_binding_index,
+                    .binding = curr_attr_binding_index,
+                    .format = vert_attr_fmt,
+                    .offset = vertex_buffer_size,
+                    });
+
+                new_primitive.bindings.emplace_back(vk::VertexInputBindingDescription{
+                    .binding = curr_attr_binding_index,
+                    .stride = avk::get_format_info(static_cast<VkFormat>(vert_attr_fmt)).size,
+                    .inputRate = vk::VertexInputRate::eVertex,
+                    });
+
+                curr_attr_binding_index++;
+
+                vertex_buffer_size += attr_accessor.get_data_size();
+            }
+
+            if (gltf_primitive.get_indices() >= 0) {
+                const auto& indices_accessor = accessors[gltf_primitive.get_indices()];
+                new_primitive.index_type = to_vk_index_type(indices_accessor.get_type(), indices_accessor.get_component_type());
+                new_primitive.index_buffer_offset = index_buffer_size;
+                new_primitive.indices_count = indices_accessor.get_count();
+
+                index_buffer_size += indices_accessor.get_data_size();
+            }
+        }
+    }
+
+    auto [vertex_staging_buffer, vertex_buffer] = avk::gen_buffer(
+        command_buffer,
+        queue_family,
+        vertex_buffer_size,
+        vk::BufferUsageFlagBits::eVertexBuffer,
+        vk::PipelineStageFlagBits::eVertexInput,
+        vk::AccessFlagBits::eVertexAttributeRead,
+        [&](const uint8_t* dst) {
+            auto vk_mesh = meshes.begin();
+            for (const auto& gltf_mesh : mdl.get_meshes()) {
+                auto vk_primitive = vk_mesh->begin();
+                for (const auto& gltf_primitive : gltf_mesh.get_primitives()) {
+                    auto vk_attr = vk_primitive->attributes.begin();
+                    for (const auto& attr : gltf_primitive.get_attributes()) {
+                        const auto& accessor = accessors[attr];
+                        std::memcpy(
+                            (void*) (dst + vk_primitive->vertex_buffer_offset + vk_attr->offset),
+                            accessor.get_data(
+                                buffers.data(),
+                                buffers.size(),
+                                buffer_views.data(),
+                                buffer_views.size()),
+                                accessor.get_data_size());
+                        vk_attr++;
+                    }
+                    vk_primitive++;
+                }
+                vk_mesh++;
+            }
+        });
+
+    auto [index_staging_buffer, index_buffer] = create_index_buffer(mdl, index_buffer_size, meshes, command_buffer, queue_family);
+
+    new_geometry.m_primitives = std::move(meshes);
+    new_geometry.m_vertex_staging_buffer = std::move(vertex_staging_buffer);
+    new_geometry.m_vertex_buffer = std::move(vertex_buffer);
+    new_geometry.m_index_staging_buffer = std::move(index_staging_buffer);
+    new_geometry.m_index_buffer = std::move(index_buffer);
+
+    return new_geometry;
+}
+
+
+void gltf::vk_geometry_builder::copy_attribute_data(
+    const gltf::primitive::vertex_attribute& attribute,
+    vk::Format desired_vk_format,
+    uint64_t vtx_size,
+    uint64_t offset,
+    const uint8_t* dst)
+{
+    auto [desired_type, desired_component_type] = gltf::from_vk_format(desired_vk_format);
+
+    switch (desired_type) {
+        case accessor_type::scalar:
+            switch (desired_component_type) {
+                case component_type::signed_byte:
+                    return ::copy_attribute_data<1, int8_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::unsigned_byte:
+                    return ::copy_attribute_data<1, uint8_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::signed_short:
+                    return ::copy_attribute_data<1, int16_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::unsigned_short:
+                    return ::copy_attribute_data<1, uint16_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::unsigned_int:
+                    return ::copy_attribute_data<1, uint32_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::float32:
+                    return ::copy_attribute_data<1, float>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                default:
+                    return;
+            }
+        case accessor_type::vec2:
+            switch (desired_component_type) {
+                case component_type::signed_byte:
+                    return ::copy_attribute_data<2, int8_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::unsigned_byte:
+                    return ::copy_attribute_data<2, uint8_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::signed_short:
+                    return ::copy_attribute_data<2, int16_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::unsigned_short:
+                    return ::copy_attribute_data<2, uint16_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::unsigned_int:
+                    return ::copy_attribute_data<2, uint32_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::float32:
+                    return ::copy_attribute_data<2, float>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                default:
+                    return;
+            }
+        case accessor_type::vec3:
+            switch (desired_component_type) {
+                case component_type::signed_byte:
+                    return ::copy_attribute_data<3, int8_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::unsigned_byte:
+                    return ::copy_attribute_data<3, uint8_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::signed_short:
+                    return ::copy_attribute_data<3, int16_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::unsigned_short:
+                    return ::copy_attribute_data<3, uint16_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::unsigned_int:
+                    return ::copy_attribute_data<3, uint32_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::float32:
+                    return ::copy_attribute_data<3, float>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                default:
+                    return;
+            }
+        case accessor_type::vec4:
+            switch (desired_component_type) {
+                case component_type::signed_byte:
+                    return ::copy_attribute_data<4, int8_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::unsigned_byte:
+                    return ::copy_attribute_data<4, uint8_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::signed_short:
+                    return ::copy_attribute_data<4, int16_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::unsigned_short:
+                    return ::copy_attribute_data<4, uint16_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::unsigned_int:
+                    return ::copy_attribute_data<4, uint32_t>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                case component_type::float32:
+                    return ::copy_attribute_data<4, float>(attribute, desired_vk_format, desired_type, desired_component_type, vtx_size, offset, dst);
+                default:
+                    return;
+            }
+        default:
+            return;
+    }
+}
+
+
+
+std::pair<hal::render::avk::vma_buffer, hal::render::avk::vma_buffer> gltf::vk_geometry_builder::create_index_buffer(
+    const gltf::model& mdl,
+    size_t index_buffer_size,
+    const std::vector<std::vector<vk_primitive>>& meshes,
+    vk::CommandBuffer& command_buffer,
+    uint32_t queue_family)
+{
+    const auto& accessors = mdl.get_accessors();
+    const auto& buffer_views = mdl.get_buffer_views();
+    const auto& buffers = mdl.get_buffers();
+
+    return avk::gen_buffer(
+        command_buffer,
+        queue_family,
+        index_buffer_size,
+        vk::BufferUsageFlagBits::eIndexBuffer,
+        vk::PipelineStageFlagBits::eVertexInput,
+        vk::AccessFlagBits::eIndexRead,
+        [&](const uint8_t* dst) {
+            auto vk_mesh = meshes.begin();
+            for (const auto& gltf_mesh : mdl.get_meshes()) {
+                auto vk_primitive = vk_mesh->begin();
+                for (const auto& gltf_primitive : gltf_mesh.get_primitives()) {
+                    for (const auto& attr : gltf_primitive.get_attributes()) {
+                        if (gltf_primitive.get_indices() >= 0) {
+                            const auto& accessor = accessors[gltf_primitive.get_indices()];
+                            std::memcpy(
+                                (void*) (dst + vk_primitive->index_buffer_offset),
+                                accessor.get_data(
+                                    buffers.data(),
+                                    buffers.size(),
+                                    buffer_views.data(),
+                                    buffer_views.size()),
+                                    accessor.get_data_size());
+                        }
+                    }
+                    vk_primitive++;
+                }
+            }
+        });
 }

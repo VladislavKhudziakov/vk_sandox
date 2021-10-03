@@ -22,7 +22,7 @@
 
 namespace sandbox::gltf
 {
-    class assets_factory;
+    class model;
     class buffer;
     class buffer_view;
     class accessor;
@@ -161,6 +161,38 @@ namespace sandbox::gltf
     class primitive
     {
     public:
+        struct vertex_attribute
+        {
+            int32_t accessor = -1;
+            accessor_type accessor_type{};
+            component_type component_type{};
+            uint64_t elements_count = 0;
+            const uint8_t* attribute_data = nullptr;
+
+            template<typename T, typename CallbackT, typename ConverterT>
+            void for_each_element(
+                CallbackT&& callback,
+                gltf::accessor_type desired_accessor_type,
+                gltf::component_type desired_component_type,
+                ConverterT&& converter) const
+            {
+                if (attribute_data == nullptr) {
+                    return;
+                }
+
+                const bool is_format_matches = accessor_type == desired_accessor_type && desired_component_type == component_type;
+
+                auto element_size = get_buffer_element_size(accessor_type, component_type);
+                for (size_t i = 0; i < elements_count; ++i) {
+                    if (is_format_matches) {
+                        callback(*reinterpret_cast<const T*>(attribute_data + (i * element_size)), i);
+                    } else {
+                        callback(converter(attribute_data + (i * element_size), accessor_type, component_type, desired_accessor_type, desired_component_type), i);
+                    }
+                }
+            }
+        };
+
         explicit primitive(const nlohmann::json& primitive_json);
 
         const std::vector<uint32_t>& get_attributes() const;
@@ -168,6 +200,9 @@ namespace sandbox::gltf
 
         int32_t get_material() const;
         int32_t get_indices() const;
+
+        int32_t attribute_at_path(attribute_path path) const;
+        vertex_attribute attribute_at_path(const gltf::model& model, attribute_path path) const;
 
     private:
         std::vector<uint32_t> m_attributes{};
