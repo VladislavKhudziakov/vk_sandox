@@ -2,13 +2,17 @@
 
 #include <gltf/vk_utils.hpp>
 #include <render/vk/utils.hpp>
+#include <utils/conditions_helpers.hpp>
 
 #include <stb/stb_image.h>
 
 #include <filesystem>
+#include <numeric>
 
 using namespace sandbox;
 using namespace sandbox::hal::render;
+
+using namespace gltf;
 
 namespace
 {
@@ -637,13 +641,13 @@ gltf::vk_geometry gltf::vk_geometry_builder::create(
                     .binding = curr_attr_binding_index,
                     .format = vert_attr_fmt,
                     .offset = vertex_buffer_size,
-                    });
+                });
 
                 new_primitive.bindings.emplace_back(vk::VertexInputBindingDescription{
                     .binding = curr_attr_binding_index,
                     .stride = avk::get_format_info(static_cast<VkFormat>(vert_attr_fmt)).size,
                     .inputRate = vk::VertexInputRate::eVertex,
-                    });
+                });
 
                 curr_attr_binding_index++;
 
@@ -683,7 +687,7 @@ gltf::vk_geometry gltf::vk_geometry_builder::create(
                                 buffers.size(),
                                 buffer_views.data(),
                                 buffer_views.size()),
-                                accessor.get_data_size());
+                            accessor.get_data_size());
                         vk_attr++;
                     }
                     vk_primitive++;
@@ -788,7 +792,6 @@ void gltf::vk_geometry_builder::copy_attribute_data(
 }
 
 
-
 std::pair<hal::render::avk::vma_buffer, hal::render::avk::vma_buffer> gltf::vk_geometry_builder::create_index_buffer(
     const gltf::model& mdl,
     size_t index_buffer_size,
@@ -822,11 +825,410 @@ std::pair<hal::render::avk::vma_buffer, hal::render::avk::vma_buffer> gltf::vk_g
                                     buffers.size(),
                                     buffer_views.data(),
                                     buffer_views.size()),
-                                    accessor.get_data_size());
+                                accessor.get_data_size());
                         }
                     }
                     vk_primitive++;
                 }
             }
         });
+}
+
+
+gltf::vk_animations_list gltf::animations_builder::create(
+    const gltf::model& mdl,
+    vk::CommandBuffer& command_buffer,
+    uint32_t queue_family)
+{
+    vk_animations_list result{};
+
+    size_t anims_buffer_size = 0;
+    const auto& animations = get_animations(mdl, anims_buffer_size);
+    const auto& nodes_children = get_input_nodes(mdl);
+    const auto& exec_order = get_execution_order(mdl);
+
+    result.m_animations_list.reserve(animations.size());
+
+    for (const auto& anim : animations) {
+        result.m_animations_list.emplace_back(vk_animation{static_cast<uint32_t>(anim.offset), static_cast<uint32_t>(anim.size)});
+    }
+
+    auto [anim_staging_buffer, anim_buffer] = avk::gen_buffer(
+        command_buffer,
+        queue_family,
+        anims_buffer_size,
+        vk::BufferUsageFlagBits::eStorageBuffer,
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::AccessFlagBits::eShaderRead,
+        [&animations](uint8_t* dst) {
+            for (const auto& anim : animations) {
+                auto* dst_ptr = dst + anim.offset;
+                std::memcpy(dst_ptr, glm::value_ptr(anim.interpolation_avg_frame_duration), sizeof(anim.interpolation_avg_frame_duration));
+                dst_ptr += sizeof(anim.interpolation_avg_frame_duration);
+                for (const auto& sampler : anim.samplers) {
+                    std::memcpy(dst_ptr, &sampler.ts, sizeof(float));
+                    dst_ptr += sizeof(float) * 4;
+                    std::memcpy(dst_ptr, sampler.nodes_keys.data(), sampler.nodes_keys.size() * sizeof(sampler.nodes_keys.front()));
+                    dst_ptr += sampler.nodes_keys.size() * sizeof(sampler.nodes_keys.front());
+                }
+            }
+        });
+
+    result.m_anim_sub_buffer.first = 0;
+    result.m_anim_sub_buffer.second = anims_buffer_size;
+
+    auto [nodes_staging_buffer, nodes_buffer] = avk::gen_buffer(
+        command_buffer,
+        queue_family,
+        nodes_children.size() * sizeof(nodes_children.front()),
+        vk::BufferUsageFlagBits::eStorageBuffer,
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::AccessFlagBits::eShaderRead,
+        [&nodes_children](uint8_t* dst) {
+            std::memcpy(dst, nodes_children.data(), nodes_children.size() * sizeof(nodes_children.front()));
+        });
+
+    result.m_nodes_sub_buffer.first = 0;
+    result.m_nodes_sub_buffer.second = nodes_children.size() * sizeof(nodes_children.front());
+
+    auto [exec_order_staging_buffer, exec_order_buffer] = avk::gen_buffer(
+        command_buffer,
+        queue_family,
+        exec_order.size() * sizeof(exec_order.front()),
+        vk::BufferUsageFlagBits::eStorageBuffer,
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::AccessFlagBits::eShaderRead,
+        [&exec_order](uint8_t* dst) {
+            std::memcpy(dst, exec_order.data(), exec_order.size() * sizeof(exec_order.front()));
+        });
+
+    result.m_exec_order_sub_buffer.first = 0;
+    result.m_exec_order_sub_buffer.second = exec_order.size() * sizeof(exec_order.front());
+
+    result.m_anim_staging_buffer = std::move(anim_staging_buffer);
+    result.m_anim_buffer = std::move(anim_buffer);
+    result.m_nodes_staging_buffer = std::move(nodes_staging_buffer);
+    result.m_nodes_buffer = std::move(nodes_buffer);
+    result.m_exec_order_staging_buffer = std::move(exec_order_staging_buffer);
+    result.m_exec_order_buffer = std::move(exec_order_buffer);
+
+    return result;
+}
+
+
+std::vector<animations_builder::gpu_anim_key> animations_builder::get_default_keys(const model& mdl)
+{
+    std::vector<gpu_anim_key> result{};
+    result.reserve(mdl.get_nodes().size());
+
+    for (const auto& node : mdl.get_nodes()) {
+        auto& new_key = result.emplace_back();
+
+        const auto node_local_transform = node.get_transform();
+        auto& l_rot = node_local_transform.rotation;
+        new_key.trs.translation = node_local_transform.translation;
+        new_key.trs.rotation = {l_rot.x, l_rot.y, l_rot.z, l_rot.w};
+        new_key.trs.scale = node_local_transform.scale;
+    }
+
+    return result;
+}
+
+
+animations_builder::gpu_animation animations_builder::create_animation(
+    const model& model,
+    const animation& curr_animation,
+    const std::vector<gpu_anim_key>& default_keys)
+{
+    animations_builder::gpu_animation result{};
+    const auto& samplers = curr_animation.get_samplers();
+
+    for (const auto& channel : curr_animation.get_channels()) {
+        auto [keys_count, keys] = channel.get_keys(model);
+
+        if (keys_count > result.samplers.size()) {
+            result.samplers.reserve(keys_count);
+            for (auto i = result.samplers.size(); i < keys_count; ++i) {
+                auto& new_sampler = result.samplers.emplace_back();
+                new_sampler.ts = keys[i];
+                new_sampler.nodes_keys.reserve(default_keys.size());
+                std::copy(default_keys.begin(), default_keys.end(), std::back_inserter(new_sampler.nodes_keys));
+            }
+        }
+    }
+
+    float frame_duration = -1;
+
+    for (size_t sampler = 0; sampler < result.samplers.size(); ++sampler) {
+        auto& curr_sampler = result.samplers[sampler];
+        auto& next_sampler = result.samplers[std::min(result.samplers.size() - 1, sampler + 1)];
+
+        if (sampler + 1 < result.samplers.size()) {
+            float curr_frame_duration = next_sampler.ts - curr_sampler.ts;
+            if (frame_duration >= 0) {
+                auto delta = curr_frame_duration - frame_duration;
+                CHECK_MSG(delta < 2.0f / 1e6, " delta " + std::to_string(delta));
+            }
+            frame_duration = curr_frame_duration;
+        }
+
+        for (size_t node = 0; node < curr_sampler.nodes_keys.size(); ++node) {
+            const auto channels = curr_animation.channels_for_node(node);
+
+            // take values from prev frame
+            const auto& prev_node = sampler == 0 ? default_keys[node] : result.samplers[sampler - 1].nodes_keys[node];
+            curr_sampler.nodes_keys[node] = prev_node;
+
+            for (const int32_t channel : channels) {
+                if (channel < 0) {
+                    continue;
+                }
+
+                auto& curr_channel = curr_animation.get_channels()[channel];
+
+                auto [values_count, values_a_type, values_type, values] = curr_channel.get_values(model);
+                const auto& curr_gltf_sampler = curr_animation.get_samplers()[curr_channel.get_sampler()];
+
+                if (sampler < values_count) {
+                    switch (curr_channel.get_path()) {
+                        case animation_path::rotation:
+                            CHECK(result.interpolation_avg_frame_duration.y < 0 || result.interpolation_avg_frame_duration.y == int32_t(curr_gltf_sampler.get_interpolation()));
+                            result.interpolation_avg_frame_duration.y = int32_t(curr_gltf_sampler.get_interpolation());
+                            // TODO: vec4 -> quat conversion
+                            curr_sampler.nodes_keys[node].trs.rotation = reinterpret_cast<const glm::vec4*>(values)[sampler];
+                            break;
+                        case animation_path::translation:
+                            CHECK(result.interpolation_avg_frame_duration.x < 0 || result.interpolation_avg_frame_duration.x == int32_t(curr_gltf_sampler.get_interpolation()));
+                            result.interpolation_avg_frame_duration.x = int32_t(curr_gltf_sampler.get_interpolation());
+                            curr_sampler.nodes_keys[node].trs.translation = reinterpret_cast<const glm::vec3*>(values)[sampler];
+                            break;
+                        case animation_path::scale:
+                            CHECK(result.interpolation_avg_frame_duration.z < 0 || result.interpolation_avg_frame_duration.z == int32_t(curr_gltf_sampler.get_interpolation()));
+                            result.interpolation_avg_frame_duration.z = int32_t(curr_gltf_sampler.get_interpolation());
+                            curr_sampler.nodes_keys[node].trs.scale = reinterpret_cast<const glm::vec3*>(values)[sampler];
+                            break;
+                        case animation_path::weights:
+                            continue;
+                    }
+                }
+            }
+        }
+    }
+
+    result.interpolation_avg_frame_duration.w = int32_t(frame_duration * 1e6);
+
+    return result;
+}
+
+
+std::vector<animations_builder::gpu_animation> gltf::animations_builder::get_animations(const gltf::model& mdl, size_t& out_anims_buffer_size)
+{
+    std::vector<animations_builder::gpu_animation> result;
+    result.reserve(mdl.get_animations().size());
+
+    auto default_keys = get_default_keys(mdl);
+
+    size_t anims_buffer_size = 0;
+
+    for (const auto& curr_animation : mdl.get_animations()) {
+        auto new_anim = create_animation(mdl, curr_animation, default_keys);
+        new_anim.offset = anims_buffer_size;
+        // samplers count * (size aligned ts size + anim key size * nodes count)
+        size_t samplers_size = new_anim.samplers.size() * ((sizeof(float) * 4) + sizeof(gpu_anim_key) * mdl.get_nodes().size());
+        // samplers size + interpolations_avg_frame_time size
+        new_anim.size = samplers_size + sizeof(glm::ivec4);
+        anims_buffer_size += new_anim.size;
+        result.emplace_back(std::move(new_anim));
+    }
+
+    out_anims_buffer_size = anims_buffer_size;
+
+    return result;
+}
+
+
+std::vector<glm::ivec4> gltf::animations_builder::get_input_nodes(const gltf::model& mdl)
+{
+    std::vector<glm::ivec4> children_indices{};
+    children_indices.emplace_back(-1, -1, -1, -1);
+    size_t children_write_index = 0;
+
+    std::vector<glm::ivec4> result;
+    result.reserve(mdl.get_nodes().size());
+
+    for (const auto& node : mdl.get_nodes()) {
+        if (children_write_index >= children_indices.back().length()) {
+            children_write_index = 0;
+            result.emplace_back(-1, -1, -1, -1);
+        }
+
+        result.emplace_back(
+            children_indices.size() - 1,
+            children_write_index,
+            node.get_children().size(),
+            -1);
+
+        for (const auto& child : node.get_children()) {
+            if (children_write_index >= children_indices.back().length()) {
+                children_write_index = 0;
+                result.emplace_back(-1, -1, -1, -1);
+            }
+
+            children_indices.back()[children_write_index++] = child;
+        }
+    }
+
+    result.reserve(children_indices.size());
+    std::copy(children_indices.begin(), children_indices.end(), std::back_inserter(result));
+
+    return result;
+}
+
+
+std::vector<glm::ivec4> gltf::animations_builder::get_execution_order(const gltf::model& mdl)
+{
+    std::vector<glm::ivec4> result;
+    result.reserve((mdl.get_nodes().size() / 4) + 1);
+    result.emplace_back(-1, -1, -1, -1);
+    size_t write_index = 0;
+
+    for_each_scene_node(mdl, [&write_index, &result](const gltf::node& node, int32_t node_index) {
+        if (write_index >= result.back().length()) {
+            write_index = 0;
+            result.emplace_back(-1, -1, -1, -1);
+        }
+        result.back()[write_index++] = node_index;
+    });
+
+    return result;
+}
+
+
+const std::vector<vk_animation>& vk_animations_list::get_animations() const
+{
+    return m_animations_list;
+}
+
+
+std::tuple<vk::Buffer, uint32_t, uint32_t> vk_animations_list::get_anim_buffer() const
+{
+    return {m_anim_buffer.as<vk::Buffer>(), m_anim_sub_buffer.first, m_anim_sub_buffer.second};
+}
+
+
+std::tuple<vk::Buffer, uint32_t, uint32_t> vk_animations_list::get_nodes_buffer() const
+{
+    return {m_nodes_buffer.as<vk::Buffer>(), m_nodes_sub_buffer.first, m_nodes_sub_buffer.second};
+}
+
+
+std::tuple<vk::Buffer, uint32_t, uint32_t> vk_animations_list::get_exec_order_buffer() const
+{
+    return {m_exec_order_buffer.as<vk::Buffer>(), m_exec_order_sub_buffer.first, m_exec_order_sub_buffer.second};
+}
+
+
+uint32_t vk_animations_list::get_nodes_count() const
+{
+    return 0;
+}
+
+
+void animation_instance::update(uint64_t dt)
+{
+    if (m_playback_state == playback_state::paused) {
+        return;
+    }
+
+    const auto& curr_anim = m_model.get_animations()[m_current_animation];
+    m_curr_position += dt;
+    if (m_curr_position >= m_end_position) {
+        if (m_looped) {
+            m_curr_position = m_start_position;
+        } else {
+            m_curr_position = m_end_position;
+        }
+    }
+}
+
+
+animation_instance::animation_instance(const model& model)
+    : m_model(model)
+{
+}
+
+
+void animation_instance::play(uint32_t animation_index, uint64_t start_position_us, uint64_t end_position_us, bool looped)
+{
+    const auto& curr_anim = m_model.get_animations()[m_current_animation];
+    uint64_t anim_duration_us = curr_anim.get_duration() * 1e6;
+
+    m_current_animation = animation_index;
+    m_start_position = std::max(start_position_us, anim_duration_us);
+    m_curr_position = m_start_position;
+    m_end_position = std::max(anim_duration_us, end_position_us);
+    m_looped = looped;
+
+    m_playback_state = playback_state::playing;
+}
+
+
+void animation_instance::pause()
+{
+    m_playback_state = playback_state::paused;
+}
+
+
+void animation_instance::stop()
+{
+    m_playback_state = playback_state::paused;
+}
+
+
+void animation_instance::resume()
+{
+    m_playback_state = playback_state::playing;
+}
+
+
+gpu_animation_controller::gpu_animation_controller(const gltf::model& model, size_t batch_size)
+    : m_animations_list()
+    , m_batch_size(batch_size)
+{
+    uint32_t queue_family{0};
+
+    m_anim_instances.reserve(m_batch_size);
+    m_hierarchy_buffer_size = m_animations_list.get_nodes_count() * batch_size * sizeof(glm::mat4);
+
+    auto result_buffer = avk::create_vma_buffer(
+        vk::BufferCreateInfo{
+            .flags = {},
+            .size = m_hierarchy_buffer_size,
+            .usage = vk::BufferUsageFlagBits::eStorageBuffer,
+            .sharingMode = vk::SharingMode::eExclusive,
+            .queueFamilyIndexCount = 1,
+            .pQueueFamilyIndices = &queue_family},
+        VmaAllocationCreateInfo{
+            .usage = VMA_MEMORY_USAGE_GPU_ONLY});
+}
+
+
+void gpu_animation_controller::update(uint64_t dt)
+{
+    for (auto& i : m_anim_instances) {
+        i.update(dt);
+    }
+}
+
+
+std::tuple<vk::Buffer, uint32_t, uint32_t> gpu_animation_controller::get_hierarchy_buffer()
+{
+    return {m_hierarchy_buffer.as<vk::Buffer>(), 0, m_hierarchy_buffer_size};
+}
+
+
+animation_instance* gpu_animation_controller::create_animation_instance(const gltf::model& model)
+{
+    CHECK(m_anim_instances.size() < m_batch_size);
+    return &m_anim_instances.emplace_back(model);
 }

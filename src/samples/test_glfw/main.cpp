@@ -50,8 +50,8 @@ public:
     vk::Extent2D get_present_image_size() const override
     {
         return {
-            m_attachment_width,
-            m_attachment_height};
+            uint32_t(m_attachment_width),
+            uint32_t(m_attachment_height)};
     }
 
     std::vector<vk::Semaphore> get_wait_semaphores() const override
@@ -125,8 +125,8 @@ private:
             .attachmentCount = 1,
             .pAttachments = m_attachment_view.handler_ptr(),
 
-            .width = width,
-            .height = height,
+            .width = uint32_t(width),
+            .height = uint32_t(height),
             .layers = 1,
         }));
     }
@@ -360,8 +360,8 @@ private:
                         .y = 0,
                     },
                     .extent = {
-                        .width = m_attachment_width,
-                        .height = m_attachment_height,
+                        .width = uint32_t(m_attachment_width),
+                        .height = uint32_t(m_attachment_height),
                     },
                 },
                 .clearValueCount = 1,

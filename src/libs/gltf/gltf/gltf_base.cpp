@@ -672,14 +672,23 @@ const uint8_t* buffer_view::get_data(
 }
 
 
-animation::animation(const nlohmann::json& animation_json)
+animation::animation(const nlohmann::json& animation_json, const gltf::model& model)
 {
     for (const auto& sampler : animation_json["samplers"]) {
         m_samplers.emplace_back(sampler);
     }
 
     for (const auto& channel : animation_json["channels"]) {
-        m_channels.emplace_back(channel);
+        auto& new_channel = m_channels.emplace_back(channel, *this);
+        const auto it = m_node_channels_cache.find(new_channel.get_node());
+        const auto [keys_count, keys] = new_channel.get_keys(model);
+        m_duration = std::max(m_duration, keys[keys_count - 1]);
+
+        if (it == m_node_channels_cache.end()) {
+            m_node_channels_cache[m_channels.back().get_node()] = {-1, -1, -1, -1};
+        }
+
+        m_node_channels_cache[new_channel.get_node()][static_cast<uint32_t>(new_channel.get_path())] = m_channels.size() - 1;
     }
 }
 
@@ -696,10 +705,28 @@ const std::vector<animation_sampler>& animation::get_samplers() const
 }
 
 
-animation_channel::animation_channel(const nlohmann::json& animation_channel_json)
+animation::channels_list animation::channels_for_node(uint32_t node_index) const
+{
+    auto it = m_node_channels_cache.find(node_index);
+    if (it == m_node_channels_cache.end()) {
+        return {-1, -1, -1, -1};
+    } else {
+        return it->second;
+    }
+}
+
+
+float animation::get_duration() const
+{
+    return m_duration;
+}
+
+
+animation_channel::animation_channel(const nlohmann::json& animation_channel_json, const gltf::animation& animation)
     : m_sampler(extract_json_data<uint64_t>(animation_channel_json, "sampler"))
     , m_node(animation_channel_json["target"]["node"])
     , m_path(animation_channel_json["target"]["path"])
+    , m_animation(animation)
 {
 }
 
@@ -719,6 +746,55 @@ uint64_t animation_channel::get_node() const
 animation_path animation_channel::get_path() const
 {
     return m_path;
+}
+
+
+std::pair<uint64_t, const float*> animation_channel::get_keys(const model& mdl) const
+{
+    const auto& accessors = mdl.get_accessors();
+    const auto& buffers = mdl.get_buffers();
+    const auto& buffer_views = mdl.get_buffer_views();
+
+    const auto& sampler = m_animation.get_samplers()[get_sampler()];
+
+    auto input_accessor = accessors[sampler.get_input()];
+
+    CHECK_MSG(input_accessor.get_type() == gltf::accessor_type::scalar, "Bad keys accessor.");
+    CHECK_MSG(input_accessor.get_component_type() == gltf::component_type::float32, "Bad keys accessor.");
+
+    const auto* keys = (const float*) input_accessor.get_data(buffers.data(), buffers.size(), buffer_views.data(), buffer_views.size());
+
+    return {input_accessor.get_count(), keys};
+}
+
+
+std::tuple<uint64_t, accessor_type, component_type, const uint8_t*> animation_channel::get_values(const model& mdl) const
+{
+    const auto& accessors = mdl.get_accessors();
+    const auto& buffers = mdl.get_buffers();
+    const auto& buffer_views = mdl.get_buffer_views();
+
+    const auto& sampler = m_animation.get_samplers()[get_sampler()];
+    auto output_accessor = accessors[sampler.get_output()];
+
+    switch (m_path) {
+        case animation_path::rotation:
+            CHECK_MSG(output_accessor.get_type() == gltf::accessor_type::vec4, "Bad keys accessor.");
+            CHECK_MSG(output_accessor.get_component_type() == gltf::component_type::float32, "Bad keys accessor.");
+            break;
+        case animation_path::translation:
+            [[fallthrough]];
+        case animation_path::scale:
+            CHECK_MSG(output_accessor.get_type() == gltf::accessor_type::vec3, "Bad keys accessor.");
+            CHECK_MSG(output_accessor.get_component_type() == gltf::component_type::float32, "Bad keys accessor.");
+            break;
+        case animation_path::weights:
+            break;
+    }
+
+    const auto* values = output_accessor.get_data(buffers.data(), buffers.size(), buffer_views.data(), buffer_views.size());
+
+    return {output_accessor.get_count(), output_accessor.get_type(), output_accessor.get_component_type(), values};
 }
 
 
@@ -867,7 +943,7 @@ model::model(const nlohmann::json& gltf_json, const std::string& cwd, std::optio
     do_if_found(gltf_json, "animations", [this](const json& animations) {
         m_animations.reserve(animations.size());
         for (const auto& animation : animations) {
-            m_animations.emplace_back(animation);
+            m_animations.emplace_back(animation, *this);
         }
     });
 

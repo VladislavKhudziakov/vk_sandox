@@ -74,7 +74,7 @@ function (make_bin)
                 OUTPUT ${SPIRV}
                 COMMAND ${CMAKE_COMMAND} -E make_directory ${SPIRV_DIR}
                 COMMAND ${CMAKE_COMMAND} -E copy ${GLSL} ${SPIRV_DIR}/${GLSL_FILE}
-                COMMAND ${GLSL_VALIDATOR} -V -Os ${GLSL} -o ${SPIRV}
+                COMMAND ${GLSL_VALIDATOR} -V -Os ${GLSL} -o ${SPIRV} -t
                 DEPENDS ${GLSL})
 
         if (CLANG_FORMAT)

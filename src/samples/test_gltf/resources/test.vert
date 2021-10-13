@@ -1,4 +1,5 @@
 #version 450
+#extension GL_KHR_vulkan_glsl : enable
 #extension GL_ARB_separate_shader_objects : enable
 
 
@@ -12,9 +13,9 @@ layout(location = 6) in uvec4 a_joints;
 layout(location = 7) in vec4 a_weight;
 
 layout(constant_id = 0) const uint USE_HIERARCHY = 0;
-layout (constant_id = 1) const uint USE_SKIN = 0;
+layout(constant_id = 1) const uint USE_SKIN = 0;
 layout(constant_id = 2) const uint HIERARCHY_SIZE = 1;
-layout (constant_id = 3) const uint SKIN_SIZE = 1;
+layout(constant_id = 3) const uint SKIN_SIZE = 1;
 
 
 layout(push_constant) uniform node_id
@@ -48,10 +49,11 @@ struct skin_joint
 };
 
 
-layout (set = 0, binding = 2) uniform skin
+layout(set = 0, binding = 2) uniform skin
 {
     skin_joint joints[SKIN_SIZE];
-} u_skin;
+}
+u_skin;
 
 
 layout(location = 0) out vec3 v_normal;
@@ -64,11 +66,8 @@ void main()
 
     if (USE_HIERARCHY == 1) {
         if (USE_SKIN == 1) {
-        skin_transform =
-            (u_hierarchy.nodes_transforms[u_skin.joints[a_joints.x].node] * u_skin.joints[a_joints.x].inv_bind_pose) * a_weight.x +
-            (u_hierarchy.nodes_transforms[u_skin.joints[a_joints.y].node] * u_skin.joints[a_joints.y].inv_bind_pose) * a_weight.y +
-            (u_hierarchy.nodes_transforms[u_skin.joints[a_joints.z].node] * u_skin.joints[a_joints.z].inv_bind_pose) * a_weight.z +
-            (u_hierarchy.nodes_transforms[u_skin.joints[a_joints.w].node] * u_skin.joints[a_joints.w].inv_bind_pose) * a_weight.w;
+            skin_transform =
+                (u_hierarchy.nodes_transforms[u_skin.joints[a_joints.x].node] * u_skin.joints[a_joints.x].inv_bind_pose) * a_weight.x + (u_hierarchy.nodes_transforms[u_skin.joints[a_joints.y].node] * u_skin.joints[a_joints.y].inv_bind_pose) * a_weight.y + (u_hierarchy.nodes_transforms[u_skin.joints[a_joints.z].node] * u_skin.joints[a_joints.z].inv_bind_pose) * a_weight.z + (u_hierarchy.nodes_transforms[u_skin.joints[a_joints.w].node] * u_skin.joints[a_joints.w].inv_bind_pose) * a_weight.w;
         } else {
             skin_transform = u_hierarchy.nodes_transforms[u_node_id.id];
         }

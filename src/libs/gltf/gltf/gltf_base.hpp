@@ -26,7 +26,7 @@ namespace sandbox::gltf
     class buffer;
     class buffer_view;
     class accessor;
-
+    class animation;
 
     class buffer
     {
@@ -242,13 +242,17 @@ namespace sandbox::gltf
     class animation_channel
     {
     public:
-        explicit animation_channel(const nlohmann::json&);
+        animation_channel(const nlohmann::json&, const gltf::animation&);
 
         uint64_t get_sampler() const;
         uint64_t get_node() const;
         animation_path get_path() const;
 
+        std::pair<uint64_t, const float*> get_keys(const gltf::model& mdl) const;
+        std::tuple<uint64_t, accessor_type, component_type, const uint8_t*> get_values(const gltf::model& mdl) const;
+
     private:
+        const gltf::animation& m_animation;
         uint64_t m_sampler{0};
         uint64_t m_node{0};
         animation_path_value m_path{};
@@ -274,12 +278,19 @@ namespace sandbox::gltf
     class animation
     {
     public:
-        explicit animation(const nlohmann::json& animation_json);
+        using channels_list = std::array<int32_t, 4>;
+
+        animation(const nlohmann::json& animation_json, const gltf::model& model);
 
         const std::vector<animation_channel>& get_channels() const;
         const std::vector<animation_sampler>& get_samplers() const;
+        channels_list channels_for_node(uint32_t node_index) const;
+        float get_duration() const;
 
     private:
+        float m_duration{0};
+        std::unordered_map<uint32_t, channels_list> m_node_channels_cache{};
+        animation_interpolation_value m_interpolation{};
         std::vector<animation_channel> m_channels{};
         std::vector<animation_sampler> m_samplers{};
     };

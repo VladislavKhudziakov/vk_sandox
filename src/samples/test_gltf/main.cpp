@@ -5,6 +5,7 @@
 #include <sample_app.hpp>
 #include <render/vk/errors_handling.hpp>
 #include <render/vk/utils.hpp>
+#include <render/vk/resources.hpp>
 #include <gltf/vk_utils.hpp>
 
 #include <renderdoc/renderdoc.hpp>
@@ -126,27 +127,38 @@ protected:
         });
 
         m_geometry = gltf::vk_geometry_builder()
-            .set_fixed_vertex_format(
-                 {
-                 vk::Format::eR32G32B32Sfloat,
-                 vk::Format::eR32G32B32Sfloat,
-                 vk::Format::eR32G32B32A32Sfloat,
-                 vk::Format::eR32G32Sfloat,
-                vk::Format::eR32G32Sfloat,
-                vk::Format::eR32G32B32Sfloat,
-                vk::Format::eR32G32B32A32Uint,
-                vk::Format::eR32G32B32A32Sfloat})
-            .create_with_fixed_format(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
+                         .set_fixed_vertex_format(
+                             {vk::Format::eR32G32B32Sfloat,
+                              vk::Format::eR32G32B32Sfloat,
+                              vk::Format::eR32G32B32A32Sfloat,
+                              vk::Format::eR32G32Sfloat,
+                              vk::Format::eR32G32Sfloat,
+                              vk::Format::eR32G32B32Sfloat,
+                              vk::Format::eR32G32B32A32Uint,
+                              vk::Format::eR32G32B32A32Sfloat})
+                         .create_with_fixed_format(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
         m_texture_atlas = gltf::vk_texture_atlas::from_gltf_model(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
         m_skins = gltf::vk_geometry_skins::from_gltf_model(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
+        m_anim_list = gltf::animations_builder().create(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
 
         auto transforms_buffer_size = m_model.get_meshes().size() * sizeof(gltf::instance_transform_data);
         auto [uniform_staging_buffer, uniform_buffer] = avk::gen_buffer(curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics), transforms_buffer_size, vk::BufferUsageFlagBits::eUniformBuffer);
+        m_hierarchy_buffer = avk::gen_buffer(
+                                 curr_buffer,
+                                 avk::context::queue_family(vk::QueueFlagBits::eGraphics),
+                                 m_model.get_nodes().size() * sizeof(glm::mat4),
+                                 vk::BufferUsageFlagBits::eStorageBuffer)
+                                 .second;
 
+        m_anim_progression_buffer = avk::gen_buffer(
+                                        curr_buffer,
+                                        avk::context::queue_family(vk::QueueFlagBits::eGraphics),
+                                        sizeof(glm::ivec4),
+                                        vk::BufferUsageFlagBits::eStorageBuffer)
+                                        .second;
         curr_buffer.end();
 
         auto graphics_queue = avk::context::queue(vk::QueueFlagBits::eGraphics, 0);
-
         auto fence = avk::create_fence(avk::context::device()->createFence({}));
 
         graphics_queue.submit(
@@ -181,16 +193,6 @@ protected:
     }
 
 private:
-    struct pipeline_data
-    {
-        avk::pipeline_layout layout{};
-        avk::descriptor_pool pool{};
-        std::vector<avk::descriptor_set_layout> descriptor_layouts{};
-        avk::descriptor_set_list descriptors{};
-
-        avk::graphics_pipeline pipeline{};
-    };
-
     void create_shader(avk::shader_module& module, const std::string& path)
     {
         if (module) {
@@ -217,6 +219,40 @@ private:
             create_shader(m_fragment_shader, "./resources/test.frag.spv");
         }
 
+        if (!m_comp_shader) {
+            create_shader(m_comp_shader, "./resources/skinning.comp.spv");
+        }
+
+
+        auto builder = avk::pipeline_builder();
+        auto as = m_model.get_animations().size();
+        auto ns = m_model.get_nodes().size();
+        builder.set_shader_stages({{m_comp_shader, vk::ShaderStageFlagBits::eCompute}})
+
+            .add_specialization_constant<uint32_t>(m_model.get_animations().size())
+            .add_specialization_constant<uint32_t>(m_model.get_nodes().size())
+            .add_specialization_constant<uint32_t>(1)
+            .begin_descriptor_set()
+            .add_buffer(m_anim_progression_buffer.as<vk::Buffer>(), 0, sizeof(glm::ivec4), vk::DescriptorType::eStorageBuffer);
+
+        std::vector<vk::Buffer> buffers;
+        std::vector<std::pair<VkDeviceSize, VkDeviceSize>> ranges;
+
+        for (const auto& anim : m_anim_list.get_animations()) {
+            auto [buffer, offset, size] = m_anim_list.get_anim_buffer();
+            buffers.emplace_back(buffer);
+            ranges.emplace_back() = {anim.offset, anim.size};
+        }
+
+        builder.add_buffers(buffers, ranges, vk::DescriptorType::eStorageBuffer);
+        auto [anim_buffer, anim_buffer_offset, anim_buffer_size] = m_anim_list.get_exec_order_buffer();
+        auto [nodes_buffer, nodes_buffer_offset, nodes_buffer_size] = m_anim_list.get_nodes_buffer();
+        builder.add_buffer(anim_buffer, anim_buffer_offset, anim_buffer_size, vk::DescriptorType::eStorageBuffer);
+        builder.add_buffer(nodes_buffer, nodes_buffer_offset, nodes_buffer_size, vk::DescriptorType::eStorageBuffer);
+        builder.add_buffer(m_hierarchy_buffer.as<vk::Buffer>(), 0, m_model.get_nodes().size() * sizeof(glm::mat4), vk::DescriptorType::eStorageBuffer);
+
+        m_animation_pipeline = builder.create_compute_pipeline();
+
         sandbox::gltf::for_each_scene_node(m_model, [this](const gltf::node& node, int32_t node_index) {
             if (node.get_mesh() < 0) {
                 return;
@@ -230,18 +266,19 @@ private:
             assert(vk_primitives.size() == mesh.get_primitives().size());
 
             for (const auto& primitive : mesh.get_primitives()) {
-                pipeline_data curr_pipeline_data{};
                 const gltf::material& curr_material = primitive.get_material() < 0 ? materials.back() : materials[primitive.get_material()];
                 const gltf::vk_skin& curr_skin = node.get_skin() < 0 ? m_skins.get_skins().back() : m_skins.get_skins()[node.get_skin()];
-                avk::graphics_pipeline_builder builder(m_pass.get_native_pass(), 0, 1);
+                avk::pipeline_builder builder{};
 
                 builder.set_vertex_format(curr_vk_primitive->attributes, curr_vk_primitive->bindings)
                     .set_shader_stages({{m_vertex_shader, vk::ShaderStageFlagBits::eVertex}, {m_fragment_shader, vk::ShaderStageFlagBits::eFragment}})
+                    .add_blend_state()
                     .add_push_constant(vk::ShaderStageFlagBits::eVertex, uint32_t(node_index))
-                    .add_specialization_constant(uint32_t(1))                                               // use hierarchy
-                    .add_specialization_constant(uint32_t(1))                                               // use skin
+                    .add_specialization_constant(uint32_t(1))                                         // use hierarchy
+                    .add_specialization_constant(uint32_t(1))                                         // use skin
                     .add_specialization_constant(uint32_t(m_skins.get_hierarchy_transforms().size())) // hierarchy size
-                    .add_specialization_constant(uint32_t(curr_skin.count))                                 // skin size
+                    .add_specialization_constant(uint32_t(curr_skin.count))                           // skin size
+                    .begin_descriptor_set()
                     .add_buffer(m_uniform_buffer.as<vk::Buffer>(), node.get_mesh() * sizeof(gltf::instance_transform_data), sizeof(gltf::instance_transform_data), vk::DescriptorType::eUniformBuffer)
                     .add_buffer(m_skins.get_hierarchy_buffer().as<vk::Buffer>(), 0, m_skins.get_hierarchy_transforms().size() * sizeof(glm::mat4), vk::DescriptorType::eUniformBuffer)
                     .add_buffer(m_skins.get_skin_buffer().as<vk::Buffer>(), curr_skin.offset, curr_skin.size, vk::DescriptorType::eUniformBuffer);
@@ -251,7 +288,9 @@ private:
                     builder.add_texture(vk_tex.image_view, vk_tex.sampler);
                 });
 
-                m_models_primitives_pipelines[node.get_mesh()].emplace_back(builder.create_pipeline());
+                builder.finish_descriptor_set();
+
+                m_models_primitives_pipelines[node.get_mesh()].emplace_back(builder.create_graphics_pipeline(m_pass.get_native_pass(), 0));
                 curr_vk_primitive++;
             }
         });
@@ -284,6 +323,9 @@ private:
 
         command_buffer.begin(vk::CommandBufferBeginInfo{
             .flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse});
+
+        m_animation_pipeline.activate(command_buffer);
+        command_buffer.dispatch(256, 1, 1);
 
         avk::upload_buffer_data(
             command_buffer,
@@ -335,8 +377,10 @@ private:
     gltf::vk_geometry m_geometry{};
     gltf::vk_texture_atlas m_texture_atlas{};
     gltf::vk_geometry_skins m_skins{};
+    gltf::vk_animations_list m_anim_list{};
 
-    avk::_render_pass m_pass{};
+    avk::pipeline_instance m_animation_pipeline{};
+    avk::render_pass_instance m_pass{};
 
     std::vector<avk::semaphore> m_semaphores{};
     std::vector<vk::Semaphore> m_native_semaphores{};
@@ -348,13 +392,16 @@ private:
 
     avk::shader_module m_vertex_shader{};
     avk::shader_module m_fragment_shader{};
-
-    std::unordered_map<int32_t, std::vector<avk::_graphics_pipeline>> m_models_primitives_pipelines{};
+    avk::shader_module m_comp_shader{};
+    std::unordered_map<int32_t, std::vector<avk::pipeline_instance>> m_models_primitives_pipelines{};
 
     std::optional<gltf::cpu_animation_controller> m_anim_controller{};
 
     avk::vma_buffer m_uniform_staging_buffer{};
     avk::vma_buffer m_uniform_buffer{};
+
+    avk::vma_buffer m_anim_progression_buffer{};
+    avk::vma_buffer m_hierarchy_buffer{};
 
     bool m_reset_command_buffer = false;
 };

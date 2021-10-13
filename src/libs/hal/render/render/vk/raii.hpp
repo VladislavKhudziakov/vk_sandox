@@ -326,6 +326,7 @@ namespace sandbox::hal::render::avk
     [[maybe_unused]] inline auto create_shader_module = VK_RESOURCE_INITIALIZER(vk::ShaderModule, avk::context::device()->destroyShaderModule);
     [[maybe_unused]] inline auto create_render_pass = VK_RESOURCE_INITIALIZER(vk::RenderPass, avk::context::device()->destroyRenderPass);
     [[maybe_unused]] inline auto create_graphics_pipeline = VK_RESOURCE_INITIALIZER(vk::Pipeline, avk::context::device()->destroyPipeline);
+    [[maybe_unused]] inline auto create_compute_pipeline = VK_RESOURCE_INITIALIZER(vk::Pipeline, avk::context::device()->destroyPipeline);
     [[maybe_unused]] inline auto create_pipeline_cache = VK_RESOURCE_INITIALIZER(vk::PipelineCache, avk::context::device()->destroyPipelineCache);
     [[maybe_unused]] inline auto create_pipeline_layout = VK_RESOURCE_INITIALIZER(vk::PipelineLayout, avk::context::device()->destroyPipelineLayout);
     [[maybe_unused]] inline auto create_descriptor_pool = VK_RESOURCE_INITIALIZER(vk::DescriptorPool, avk::context::device()->destroyDescriptorPool);

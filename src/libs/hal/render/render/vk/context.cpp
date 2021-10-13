@@ -17,6 +17,7 @@ using namespace sandbox::hal;
 using namespace sandbox::hal::render;
 using namespace sandbox::hal::render::avk;
 
+#undef NDEBUG
 namespace
 {
 #ifndef NDEBUG

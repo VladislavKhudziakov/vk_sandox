@@ -103,8 +103,8 @@ namespace sandbox::gltf
 
     enum class animation_path
     {
-        rotation,
         translation,
+        rotation,
         scale,
         weights
     };

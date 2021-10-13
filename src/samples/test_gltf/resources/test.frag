@@ -1,4 +1,5 @@
 #version 450
+#extension GL_KHR_vulkan_glsl : enable
 #extension GL_ARB_separate_shader_objects : enable
 
 layout(location = 0) in vec3 v_normal;
@@ -15,7 +16,7 @@ void main()
     vec3 light_dir_normalized = normalize(light_dir);
     float nDotL = max(dot(v_normal, light_dir_normalized), 0.);
 
-//    vec3 base_color = texture(s_BaseColor, v_tex_coords).rgb;
+    //    vec3 base_color = texture(s_BaseColor, v_tex_coords).rgb;
     vec3 base_color = vec3(1.);
     f_FragColor = vec4(base_color * nDotL, 1.0);
 }
