@@ -32,7 +32,7 @@ protected:
     void update(uint64_t dt) override
     {
         if (m_anim_controller) {
-            m_anim_controller->update(m_model, dt);
+            //m_anim_controller->update(m_model, dt);
         }
 
         m_curr_progression.y += dt;
@@ -237,7 +237,6 @@ private:
         auto as = m_model.get_animations().size();
         auto ns = m_model.get_nodes().size();
         builder.set_shader_stages({{m_comp_shader, vk::ShaderStageFlagBits::eCompute}})
-
             .add_specialization_constant<uint32_t>(m_model.get_animations().size())
             .add_specialization_constant<uint32_t>(m_model.get_nodes().size())
             .add_specialization_constant<uint32_t>(1)
@@ -374,21 +373,21 @@ private:
                 std::memcpy((void*) dst, instance_transforms.data(), instance_transforms.size() * sizeof(instance_transforms.front()));
             });
 
-        if (m_anim_controller) {
-            avk::upload_buffer_data(
-                command_buffer,
-                m_skins.get_hierarchy_staging_buffer(),
-                m_skins.get_hierarchy_buffer(),
-                vk::PipelineStageFlagBits::eVertexShader,
-                vk::AccessFlagBits::eUniformRead,
-                m_anim_controller->get_transformations().size() * sizeof(m_anim_controller->get_transformations().front()),
-                [this](const uint8_t* dst) {
-                    std::memcpy(
-                        (void*) dst,
-                        m_anim_controller->get_transformations().data(),
-                        m_anim_controller->get_transformations().size() * sizeof(m_anim_controller->get_transformations().front()));
-                });
-        }
+        //if (m_anim_controller) {
+        //    avk::upload_buffer_data(
+        //        command_buffer,
+        //        m_skins.get_hierarchy_staging_buffer(),
+        //        m_skins.get_hierarchy_buffer(),
+        //        vk::PipelineStageFlagBits::eVertexShader,
+        //        vk::AccessFlagBits::eUniformRead,
+        //        m_anim_controller->get_transformations().size() * sizeof(m_anim_controller->get_transformations().front()),
+        //        [this](const uint8_t* dst) {
+        //            std::memcpy(
+        //                (void*) dst,
+        //                m_anim_controller->get_transformations().data(),
+        //                m_anim_controller->get_transformations().size() * sizeof(m_anim_controller->get_transformations().front()));
+        //        });
+        //}
 
         m_pass.begin(command_buffer);
 
