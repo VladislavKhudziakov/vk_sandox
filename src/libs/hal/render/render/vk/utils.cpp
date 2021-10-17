@@ -834,6 +834,8 @@ std::pair<avk::vma_buffer, avk::vma_buffer> avk::gen_buffer(
         VmaAllocationCreateInfo{
             .usage = VMA_MEMORY_USAGE_GPU_ONLY});
 
+    spdlog::info("buffer {0:x} size {1:d}", reinterpret_cast<int64_t>(static_cast<VkBuffer>(result_buffer.as<vk::Buffer>())), buffer_size);
+
     if (on_mapped_callback) {
         command_buffer.copyBuffer(
             staging_buffer.as<vk::Buffer>(),

@@ -853,6 +853,26 @@ gltf::vk_animations_list gltf::animations_builder::create(
         result.m_animations_list.emplace_back(vk_animation{static_cast<uint32_t>(anim.offset), static_cast<uint32_t>(anim.size)});
     }
 
+    auto [anim_meta_staging_buffer, anim_meta_buffer] = avk::gen_buffer(
+        command_buffer,
+        queue_family,
+        animations.size() * sizeof(glm::ivec4),
+        vk::BufferUsageFlagBits::eStorageBuffer,
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::AccessFlagBits::eShaderRead,
+        [&animations](uint8_t* dst) {
+            uint64_t offset = 0;
+            for (const auto& anim : animations) {
+                std::memcpy(dst + offset, glm::value_ptr(anim.interpolation_avg_frame_duration), sizeof(glm::ivec4));
+                offset += sizeof(glm::ivec4);
+            }
+        });
+
+    result.m_anim_meta_staging_buffer = std::move(anim_meta_staging_buffer);
+    result.m_anim_meta_buffer = std::move(anim_meta_buffer);
+    result.m_anim_meta_sub_buffer.first = 0;
+    result.m_anim_meta_sub_buffer.second = animations.size() * sizeof(glm::ivec4);
+
     auto [anim_staging_buffer, anim_buffer] = avk::gen_buffer(
         command_buffer,
         queue_family,
@@ -863,8 +883,6 @@ gltf::vk_animations_list gltf::animations_builder::create(
         [&animations](uint8_t* dst) {
             for (const auto& anim : animations) {
                 auto* dst_ptr = dst + anim.offset;
-                std::memcpy(dst_ptr, glm::value_ptr(anim.interpolation_avg_frame_duration), sizeof(anim.interpolation_avg_frame_duration));
-                dst_ptr += sizeof(anim.interpolation_avg_frame_duration);
                 for (const auto& sampler : anim.samplers) {
                     std::memcpy(dst_ptr, &sampler.ts, sizeof(float));
                     dst_ptr += sizeof(float) * 4;
@@ -916,9 +934,9 @@ gltf::vk_animations_list gltf::animations_builder::create(
 }
 
 
-std::vector<animations_builder::gpu_anim_key> animations_builder::get_default_keys(const model& mdl)
+std::vector<animations_builder::gpu_trs> animations_builder::get_default_keys(const model& mdl)
 {
-    std::vector<gpu_anim_key> result{};
+    std::vector<gpu_trs> result{};
     result.reserve(mdl.get_nodes().size());
 
     for (const auto& node : mdl.get_nodes()) {
@@ -926,19 +944,19 @@ std::vector<animations_builder::gpu_anim_key> animations_builder::get_default_ke
 
         const auto node_local_transform = node.get_transform();
         auto& l_rot = node_local_transform.rotation;
-        new_key.trs.translation = node_local_transform.translation;
-        new_key.trs.rotation = {l_rot.x, l_rot.y, l_rot.z, l_rot.w};
-        new_key.trs.scale = node_local_transform.scale;
+        new_key.translation = glm::vec4(node_local_transform.translation, 0.);
+        new_key.rotation = {l_rot.x, l_rot.y, l_rot.z, l_rot.w};
+        new_key.scale = glm::vec4(node_local_transform.scale, 1.);
     }
 
     return result;
 }
 
-
+#include <glm/gtx/string_cast.hpp>
 animations_builder::gpu_animation animations_builder::create_animation(
     const model& model,
     const animation& curr_animation,
-    const std::vector<gpu_anim_key>& default_keys)
+    const std::vector<gpu_trs>& default_keys)
 {
     animations_builder::gpu_animation result{};
     const auto& samplers = curr_animation.get_samplers();
@@ -995,17 +1013,17 @@ animations_builder::gpu_animation animations_builder::create_animation(
                             CHECK(result.interpolation_avg_frame_duration.y < 0 || result.interpolation_avg_frame_duration.y == int32_t(curr_gltf_sampler.get_interpolation()));
                             result.interpolation_avg_frame_duration.y = int32_t(curr_gltf_sampler.get_interpolation());
                             // TODO: vec4 -> quat conversion
-                            curr_sampler.nodes_keys[node].trs.rotation = reinterpret_cast<const glm::vec4*>(values)[sampler];
+                            curr_sampler.nodes_keys[node].rotation = reinterpret_cast<const glm::vec4*>(values)[sampler];
                             break;
                         case animation_path::translation:
                             CHECK(result.interpolation_avg_frame_duration.x < 0 || result.interpolation_avg_frame_duration.x == int32_t(curr_gltf_sampler.get_interpolation()));
                             result.interpolation_avg_frame_duration.x = int32_t(curr_gltf_sampler.get_interpolation());
-                            curr_sampler.nodes_keys[node].trs.translation = reinterpret_cast<const glm::vec3*>(values)[sampler];
+                            curr_sampler.nodes_keys[node].translation = glm::vec4(reinterpret_cast<const glm::vec3*>(values)[sampler], 0.);
                             break;
                         case animation_path::scale:
                             CHECK(result.interpolation_avg_frame_duration.z < 0 || result.interpolation_avg_frame_duration.z == int32_t(curr_gltf_sampler.get_interpolation()));
                             result.interpolation_avg_frame_duration.z = int32_t(curr_gltf_sampler.get_interpolation());
-                            curr_sampler.nodes_keys[node].trs.scale = reinterpret_cast<const glm::vec3*>(values)[sampler];
+                            curr_sampler.nodes_keys[node].scale = glm::vec4(reinterpret_cast<const glm::vec3*>(values)[sampler], 1.);
                             break;
                         case animation_path::weights:
                             continue;
@@ -1034,9 +1052,7 @@ std::vector<animations_builder::gpu_animation> gltf::animations_builder::get_ani
         auto new_anim = create_animation(mdl, curr_animation, default_keys);
         new_anim.offset = anims_buffer_size;
         // samplers count * (size aligned ts size + anim key size * nodes count)
-        size_t samplers_size = new_anim.samplers.size() * ((sizeof(float) * 4) + sizeof(gpu_anim_key) * mdl.get_nodes().size());
-        // samplers size + interpolations_avg_frame_time size
-        new_anim.size = samplers_size + sizeof(glm::ivec4);
+        new_anim.size = new_anim.samplers.size() * ((sizeof(float) * 4) + sizeof(gpu_trs) * mdl.get_nodes().size());
         anims_buffer_size += new_anim.size;
         result.emplace_back(std::move(new_anim));
     }
@@ -1057,11 +1073,6 @@ std::vector<glm::ivec4> gltf::animations_builder::get_input_nodes(const gltf::mo
     result.reserve(mdl.get_nodes().size());
 
     for (const auto& node : mdl.get_nodes()) {
-        if (children_write_index >= children_indices.back().length()) {
-            children_write_index = 0;
-            result.emplace_back(-1, -1, -1, -1);
-        }
-
         result.emplace_back(
             children_indices.size() - 1,
             children_write_index,
@@ -1078,7 +1089,7 @@ std::vector<glm::ivec4> gltf::animations_builder::get_input_nodes(const gltf::mo
         }
     }
 
-    result.reserve(children_indices.size());
+    result.reserve(result.size() + children_indices.size());
     std::copy(children_indices.begin(), children_indices.end(), std::back_inserter(result));
 
     return result;
@@ -1113,6 +1124,11 @@ const std::vector<vk_animation>& vk_animations_list::get_animations() const
 std::tuple<vk::Buffer, uint32_t, uint32_t> vk_animations_list::get_anim_buffer() const
 {
     return {m_anim_buffer.as<vk::Buffer>(), m_anim_sub_buffer.first, m_anim_sub_buffer.second};
+}
+
+std::tuple<vk::Buffer, uint32_t, uint32_t> sandbox::gltf::vk_animations_list::get_anim_meta_buffer() const
+{
+    return {m_anim_meta_buffer.as<vk::Buffer>(), m_anim_meta_sub_buffer.first, m_anim_meta_sub_buffer.second};
 }
 
 

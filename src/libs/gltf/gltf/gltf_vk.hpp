@@ -149,12 +149,17 @@ namespace sandbox::gltf
         const std::vector<vk_animation>& get_animations() const;
 
         std::tuple<vk::Buffer, uint32_t, uint32_t> get_anim_buffer() const;
+        std::tuple<vk::Buffer, uint32_t, uint32_t> get_anim_meta_buffer() const;
         std::tuple<vk::Buffer, uint32_t, uint32_t> get_nodes_buffer() const;
         std::tuple<vk::Buffer, uint32_t, uint32_t> get_exec_order_buffer() const;
         uint32_t get_nodes_count() const;
 
     private:
         std::vector<vk_animation> m_animations_list{};
+
+        hal::render::avk::vma_buffer m_anim_meta_staging_buffer{};
+        hal::render::avk::vma_buffer m_anim_meta_buffer{};
+        std::pair<uint32_t, uint32_t> m_anim_meta_sub_buffer{};
 
         hal::render::avk::vma_buffer m_anim_staging_buffer{};
         hal::render::avk::vma_buffer m_anim_buffer{};
@@ -178,22 +183,18 @@ namespace sandbox::gltf
     private:
         struct gpu_trs
         {
-            glm::vec3 translation{0, 0, 0};
-            alignas(sizeof(float) * 4) glm::vec4 rotation{0, 0, 0, 1};
-            alignas(sizeof(float) * 4) glm::vec3 scale{1, 1, 1};
+            glm::vec4 translation{0, 0, 0, 0};
+            glm::vec4 rotation{0, 0, 0, 1};
+            glm::vec4 scale{1, 1, 1, 1};
         };
 
         static_assert(sizeof(gpu_trs) == sizeof(float) * 4 * 3);
 
-        struct gpu_anim_key
-        {
-            gpu_trs trs{};
-        };
 
         struct gpu_anim_sampler
         {
             float ts = 0;
-            std::vector<gpu_anim_key> nodes_keys{};
+            std::vector<gpu_trs> nodes_keys{};
         };
 
         struct gpu_animation
@@ -204,12 +205,12 @@ namespace sandbox::gltf
             std::vector<gpu_anim_sampler> samplers{};
         };
 
-        std::vector<gpu_anim_key> get_default_keys(const gltf::model& mdl);
+        std::vector<gpu_trs> get_default_keys(const gltf::model& mdl);
 
         gpu_animation create_animation(
             const gltf::model& mdl,
             const gltf::animation& animation,
-            const std::vector<gpu_anim_key>& default_keys);
+            const std::vector<gpu_trs>& default_keys);
 
         std::vector<gpu_animation> get_animations(const gltf::model& mdl, size_t& anims_buffer_size);
         std::vector<glm::ivec4> get_input_nodes(const gltf::model& mdl);

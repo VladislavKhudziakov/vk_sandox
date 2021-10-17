@@ -20,20 +20,15 @@ layout(constant_id = 2) const uint BATCH_SIZE = 1;
 
 struct TRS
 {
-    vec3 translation;
+    vec4 translation;
     vec4 rotation;
-    vec3 scale;
-};
-
-struct anim_key
-{
-    float ts;
-    TRS trs;
+    vec4 scale;
 };
 
 struct anim_sampler
 {
-    anim_key node_keys[NODES_COUNT];
+    vec4 ts;
+    TRS node_keys[NODES_COUNT];
 };
 
 struct in_node
@@ -41,34 +36,40 @@ struct in_node
     ivec4 children;
 };
 
+
 layout(set = 0, binding = 0) readonly buffer anim_progression_data
 {
     uvec4 progression[];
 }
 animation_progression;
 
-layout(set = 0, binding = 1) readonly buffer animation_data
+layout(set = 0, binding = 1) readonly buffer animation_meta
 {
-    uvec4 interpolations_avg_frame_duration;
+    uvec4 interpolations_avg_frame_duration[];
+}
+animations_meta;
+
+layout(set = 0, binding = 2) readonly buffer animation_samplers
+{
     anim_sampler samplers[];
 }
 animations[ANIMATIONS_COUNT];
 
-layout(set = 0, binding = 2) readonly buffer in_execution_order_data
+layout(set = 0, binding = 3) readonly buffer in_execution_order_data
 {
     ivec4 indices[];
 }
 execution_order;
 
-layout(set = 0, binding = 3) readonly buffer in_hierarchy_data
+layout(set = 0, binding = 4) readonly buffer in_hierarchy_data
 {
     ivec4 nodes_child_indices[];
 }
 in_hierarchy;
 
-layout(set = 0, binding = 4) buffer out_hierarchy_data
+layout(set = 0, binding = 5) buffer out_hierarchy_data
 {
-    mat4 nodes[];
+    mat4 nodes[NODES_COUNT];
 }
 out_hierarchy[BATCH_SIZE];
 
@@ -114,49 +115,63 @@ mat4 mat4_cast(vec4 q)
     return actual_result;
 }
 
-void translate(vec3 t, out mat4 result)
+void translate(vec3 t, inout mat4 result)
 {
-    result[3].xyz = t;
+    result[3].xyz += t;
     result[3].w = 1;
 }
 
-void scale(vec3 s, out mat4 result)
+void scale(vec3 s, inout mat4 result)
 {
     result[0][0] *= s.x;
     result[1][1] *= s.y;
     result[2][2] *= s.z;
 }
 
-vec4 slerp(vec4 x, vec4 y, float a)
+vec4 slerp(vec4 p0, vec4 p1, float t)
 {
-    //    x = x.wxyz;
-    //    y = y.wxyz;
-
-    vec4 z = y;
-
-    float cosTheta = dot(x, y);
-
-    // If cosTheta < 0, the interpolation will take the long way around the sphere.
-    // To fix this, one quat must be negated.
-    if (cosTheta < 0) {
-        z = -y;
-        cosTheta = -cosTheta;
+    float dotp = dot(normalize(p0), normalize(p1));
+    if ((dotp > 0.9999) || (dotp < -0.9999)) {
+        if (t <= 0.5)
+            return p0;
+        return p1;
     }
-
-    // Perform a linear interpolation when cosTheta is close to 1 to avoid side effect of sin(angle) becoming a zero denominator
-    if (cosTheta > 1.0f - FLT_EPSILON) {
-        // Linear interpolation
-        return vec4(
-            mix(x.w, z.w, a),
-            mix(x.x, z.x, a),
-            mix(x.y, z.y, a),
-            mix(x.z, z.z, a));
-    } else {
-        // Essential Mathematics, page 467
-        float angle = acos(cosTheta);
-        return (sin((1.0f - a) * angle) * x + sin(a * angle) * z) / sin(angle);
-    }
+    float theta = acos(dotp);
+    vec4 P = ((p0 * sin((1 - t) * theta) + p1 * sin(t * theta)) / sin(theta));
+    P.w = 1;
+    return P;
 }
+
+// vec4 slerp(vec4 x, vec4 y, float a)
+// {
+//     //    x = x.wxyz;
+//     //    y = y.wxyz;
+
+//     vec4 z = y;
+
+//     float cosTheta = dot(x, y);
+
+//     // If cosTheta < 0, the interpolation will take the long way around the sphere.
+//     // To fix this, one quat must be negated.
+//     if (cosTheta < 0) {
+//         z = -y;
+//         cosTheta = -cosTheta;
+//     }
+
+//     // Perform a linear interpolation when cosTheta is close to 1 to avoid side effect of sin(angle) becoming a zero denominator
+//     if (cosTheta > 1.0f - FLT_EPSILON) {
+//         // Linear interpolation
+//         return vec4(
+//             mix(x.w, z.w, a),
+//             mix(x.x, z.x, a),
+//             mix(x.y, z.y, a),
+//             mix(x.z, z.z, a));
+//     } else {
+//         // Essential Mathematics, page 467
+//         float angle = acos(cosTheta);
+//         return (sin((1.0f - a) * angle) * x + sin(a * angle) * z) / sin(angle);
+//     }
+// }
 
 vec4 quat_interpolate(vec4 q1, vec4 q2, float v, uint mode)
 {
@@ -180,7 +195,7 @@ vec3 vec_interpolate(vec3 x, vec3 y, float v, uint mode)
 
 void get_samplers(uint curr_animation, uint progression_ts_us, out uint curr_sampler, out uint next_sampler)
 {
-    uint avg_frame_duration_us = animations[curr_animation].interpolations_avg_frame_duration.w;
+    uint avg_frame_duration_us = animations_meta.interpolations_avg_frame_duration[curr_animation].w;
     uint samplers_length = animations[curr_animation].samplers.length();
     curr_sampler = min(uint(progression_ts_us / avg_frame_duration_us), samplers_length - 1);
     next_sampler = min(curr_sampler + 1, samplers_length - 1);
@@ -188,9 +203,9 @@ void get_samplers(uint curr_animation, uint progression_ts_us, out uint curr_sam
 
 void calculate_key(uint curr_animation, uint node, uint progression_ts_us, out mat4 result)
 {
-    uint t_interpolation = max(animations[curr_animation].interpolations_avg_frame_duration[ANIM_PATH_TRANSLATION], 0);
-    uint r_interpolation = max(animations[curr_animation].interpolations_avg_frame_duration[ANIM_PATH_ROTATION], 0);
-    uint s_interpolation = max(animations[curr_animation].interpolations_avg_frame_duration[ANIM_PATH_SCALE], 0);
+    uint t_interpolation = max(animations_meta.interpolations_avg_frame_duration[curr_animation][ANIM_PATH_TRANSLATION], 0);
+    uint r_interpolation = max(animations_meta.interpolations_avg_frame_duration[curr_animation][ANIM_PATH_ROTATION], 0);
+    uint s_interpolation = max(animations_meta.interpolations_avg_frame_duration[curr_animation][ANIM_PATH_SCALE], 0);
 
     float progression_ts_s = float(progression_ts_us) / 1e6;
 
@@ -199,23 +214,23 @@ void calculate_key(uint curr_animation, uint node, uint progression_ts_us, out m
 
     get_samplers(curr_animation, progression_ts_us, curr_sampler, next_sampler);
 
-    vec4 progression = (vec4(progression_ts_s) - animations[curr_animation].samplers[curr_sampler].node_keys[node].ts) / (animations[curr_animation].samplers[curr_sampler].node_keys[node].ts - animations[curr_animation].samplers[next_sampler].node_keys[node].ts);
+    vec4 progression = (vec4(progression_ts_s) - animations[curr_animation].samplers[curr_sampler].ts.x) / (animations[curr_animation].samplers[next_sampler].ts.x - animations[curr_animation].samplers[curr_sampler].ts.x);
 
     vec3 curr_translation = vec_interpolate(
-        animations[curr_animation].samplers[curr_sampler].node_keys[node].trs.translation,
-        animations[curr_animation].samplers[next_sampler].node_keys[node].trs.translation,
+        animations[curr_animation].samplers[curr_sampler].node_keys[node].translation.xyz,
+        animations[curr_animation].samplers[next_sampler].node_keys[node].translation.xyz,
         progression[ANIM_PATH_TRANSLATION],
         t_interpolation);
 
     vec3 curr_scale = vec_interpolate(
-        animations[curr_animation].samplers[curr_sampler].node_keys[node].trs.scale,
-        animations[curr_animation].samplers[next_sampler].node_keys[node].trs.scale,
+        animations[curr_animation].samplers[curr_sampler].node_keys[node].scale.xyz,
+        animations[curr_animation].samplers[next_sampler].node_keys[node].scale.xyz,
         progression[ANIM_PATH_SCALE],
         s_interpolation);
 
     vec4 curr_rotation = quat_interpolate(
-        animations[curr_animation].samplers[curr_sampler].node_keys[node].trs.rotation,
-        animations[curr_animation].samplers[next_sampler].node_keys[node].trs.rotation,
+        animations[curr_animation].samplers[curr_sampler].node_keys[node].rotation,
+        animations[curr_animation].samplers[next_sampler].node_keys[node].rotation,
         progression[ANIM_PATH_ROTATION],
         r_interpolation);
 
@@ -244,18 +259,25 @@ void update_hierarchy()
     uvec4 curr_progression = animation_progression.progression[gl_GlobalInvocationID.x];
     uint mesh_instance_index = curr_progression.z;
 
-    for (uint i = 0; i < execution_order.indices.length(); ++i) {
+    bool interrupt = false;
+
+    for (uint i = 0; i < execution_order.indices.length() && !interrupt; ++i) {
         for (uint j = 0; j < 4; ++j) {
-            uint node = execution_order.indices[i][j];
+            int node = execution_order.indices[i][j];
+
+            if (node < 0) {
+                interrupt = true;
+                break;
+            }
 
             uint children_offset = in_hierarchy.nodes_child_indices[node].x;
             uint pack_start_index = in_hierarchy.nodes_child_indices[node].y;
             uint children_count = in_hierarchy.nodes_child_indices[node].z;
 
             for (uint node_child = 0, pack_index = pack_start_index; node_child < children_count; node_child++, pack_index = (pack_index + 1) % 4) {
-                uint child = in_hierarchy.nodes_child_indices[NODES_COUNT + children_offset][pack_index];
-               // out_hierarchy[mesh_instance_index].nodes[child] =
-                    // out_hierarchy[mesh_instance_index].nodes[node] * out_hierarchy[mesh_instance_index].nodes[child];
+                uint child = in_hierarchy.nodes_child_indices[NODES_COUNT + children_offset + node_child][pack_index];
+                out_hierarchy[mesh_instance_index].nodes[child] =
+                    out_hierarchy[mesh_instance_index].nodes[node] * out_hierarchy[mesh_instance_index].nodes[child];
             }
         }
     }
@@ -266,7 +288,6 @@ void main()
     if (gl_GlobalInvocationID.x >= animation_progression.progression.length()) {
         return;
     }
-
     calculcate_local_keys();
     update_hierarchy();
 }

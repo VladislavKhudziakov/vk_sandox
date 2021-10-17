@@ -35,7 +35,7 @@ layout(set = 0, binding = 0) uniform instance_data
 u_instance_data;
 
 
-layout(set = 0, binding = 1) uniform hierarchy
+layout(set = 0, binding = 1) readonly buffer hierarchy
 {
     mat4 nodes_transforms[HIERARCHY_SIZE];
 }

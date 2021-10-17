@@ -35,6 +35,9 @@ protected:
             m_anim_controller->update(m_model, dt);
         }
 
+        m_curr_progression.y += dt;
+        m_curr_progression.y = std::min<int32_t>(m_curr_progression.y, m_model.get_animations().front().get_duration() * 1e6);
+
         write_command_buffers();
 
         vk::Queue queue = avk::context::queue(vk::QueueFlagBits::eGraphics, 0);
@@ -143,6 +146,8 @@ protected:
 
         auto transforms_buffer_size = m_model.get_meshes().size() * sizeof(gltf::instance_transform_data);
         auto [uniform_staging_buffer, uniform_buffer] = avk::gen_buffer(curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics), transforms_buffer_size, vk::BufferUsageFlagBits::eUniformBuffer);
+
+        spdlog::info("hierarchy buffer here");
         m_hierarchy_buffer = avk::gen_buffer(
                                  curr_buffer,
                                  avk::context::queue_family(vk::QueueFlagBits::eGraphics),
@@ -150,12 +155,15 @@ protected:
                                  vk::BufferUsageFlagBits::eStorageBuffer)
                                  .second;
 
-        m_anim_progression_buffer = avk::gen_buffer(
-                                        curr_buffer,
-                                        avk::context::queue_family(vk::QueueFlagBits::eGraphics),
-                                        sizeof(glm::ivec4),
-                                        vk::BufferUsageFlagBits::eStorageBuffer)
-                                        .second;
+        auto [anim_progression_buffer_staging_buffer, anim_progression_buffer] = avk::gen_buffer(
+            curr_buffer,
+            avk::context::queue_family(vk::QueueFlagBits::eGraphics),
+            sizeof(glm::ivec4),
+            vk::BufferUsageFlagBits::eStorageBuffer);
+
+        m_anim_progression_staging_buffer = std::move(anim_progression_buffer_staging_buffer);
+        m_anim_progression_buffer = std::move(anim_progression_buffer);
+
         curr_buffer.end();
 
         auto graphics_queue = avk::context::queue(vk::QueueFlagBits::eGraphics, 0);
@@ -223,6 +231,7 @@ private:
             create_shader(m_comp_shader, "./resources/skinning.comp.spv");
         }
 
+        auto [anim_meta_buffer, anim_meta_buffer_offset, anim_meta_buffer_size] = m_anim_list.get_anim_meta_buffer();
 
         auto builder = avk::pipeline_builder();
         auto as = m_model.get_animations().size();
@@ -233,7 +242,8 @@ private:
             .add_specialization_constant<uint32_t>(m_model.get_nodes().size())
             .add_specialization_constant<uint32_t>(1)
             .begin_descriptor_set()
-            .add_buffer(m_anim_progression_buffer.as<vk::Buffer>(), 0, sizeof(glm::ivec4), vk::DescriptorType::eStorageBuffer);
+            .add_buffer(m_anim_progression_buffer.as<vk::Buffer>(), 0, sizeof(glm::ivec4), vk::DescriptorType::eStorageBuffer)
+            .add_buffer(anim_meta_buffer, anim_meta_buffer_offset, anim_meta_buffer_size, vk::DescriptorType::eStorageBuffer);
 
         std::vector<vk::Buffer> buffers;
         std::vector<std::pair<VkDeviceSize, VkDeviceSize>> ranges;
@@ -245,9 +255,9 @@ private:
         }
 
         builder.add_buffers(buffers, ranges, vk::DescriptorType::eStorageBuffer);
-        auto [anim_buffer, anim_buffer_offset, anim_buffer_size] = m_anim_list.get_exec_order_buffer();
+        auto [exec_order_buffer, exec_order_buffer_offset, exec_order_buffer_size] = m_anim_list.get_exec_order_buffer();
         auto [nodes_buffer, nodes_buffer_offset, nodes_buffer_size] = m_anim_list.get_nodes_buffer();
-        builder.add_buffer(anim_buffer, anim_buffer_offset, anim_buffer_size, vk::DescriptorType::eStorageBuffer);
+        builder.add_buffer(exec_order_buffer, exec_order_buffer_offset, exec_order_buffer_size, vk::DescriptorType::eStorageBuffer);
         builder.add_buffer(nodes_buffer, nodes_buffer_offset, nodes_buffer_size, vk::DescriptorType::eStorageBuffer);
         builder.add_buffer(m_hierarchy_buffer.as<vk::Buffer>(), 0, m_model.get_nodes().size() * sizeof(glm::mat4), vk::DescriptorType::eStorageBuffer);
 
@@ -280,7 +290,8 @@ private:
                     .add_specialization_constant(uint32_t(curr_skin.count))                           // skin size
                     .begin_descriptor_set()
                     .add_buffer(m_uniform_buffer.as<vk::Buffer>(), node.get_mesh() * sizeof(gltf::instance_transform_data), sizeof(gltf::instance_transform_data), vk::DescriptorType::eUniformBuffer)
-                    .add_buffer(m_skins.get_hierarchy_buffer().as<vk::Buffer>(), 0, m_skins.get_hierarchy_transforms().size() * sizeof(glm::mat4), vk::DescriptorType::eUniformBuffer)
+                    .add_buffer(m_hierarchy_buffer.as<vk::Buffer>(), 0, m_skins.get_hierarchy_transforms().size() * sizeof(glm::mat4), vk::DescriptorType::eStorageBuffer)
+                    //.add_buffer(m_skins.get_hierarchy_buffer().as<vk::Buffer>(), 0, m_skins.get_hierarchy_transforms().size() * sizeof(glm::mat4), vk::DescriptorType::eUniformBuffer)
                     .add_buffer(m_skins.get_skin_buffer().as<vk::Buffer>(), curr_skin.offset, curr_skin.size, vk::DescriptorType::eUniformBuffer);
 
                 curr_material.for_each_texture([this, &builder](const gltf::material::texture_data& tex_data) {
@@ -325,7 +336,32 @@ private:
             .flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse});
 
         m_animation_pipeline.activate(command_buffer);
+
+
+        avk::upload_buffer_data(
+            command_buffer,
+            m_anim_progression_staging_buffer,
+            m_anim_progression_buffer,
+            vk::PipelineStageFlagBits::eComputeShader,
+            vk::AccessFlagBits::eShaderRead,
+            sizeof(glm::ivec4),
+            [this](const uint8_t* dst) {
+                std::memcpy((void*) dst, glm::value_ptr(m_curr_progression), sizeof(m_curr_progression));
+            });
+
         command_buffer.dispatch(256, 1, 1);
+
+        command_buffer.pipelineBarrier(
+            vk::PipelineStageFlagBits::eComputeShader,
+            vk::PipelineStageFlagBits::eVertexShader,
+            {},
+            {vk::MemoryBarrier{
+                .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
+                .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+            }},
+            {},
+            {});
+
 
         avk::upload_buffer_data(
             command_buffer,
@@ -400,7 +436,9 @@ private:
     avk::vma_buffer m_uniform_staging_buffer{};
     avk::vma_buffer m_uniform_buffer{};
 
+    avk::vma_buffer m_anim_progression_staging_buffer{};
     avk::vma_buffer m_anim_progression_buffer{};
+    glm::ivec4 m_curr_progression{0, 0, 0, 0};
     avk::vma_buffer m_hierarchy_buffer{};
 
     bool m_reset_command_buffer = false;
