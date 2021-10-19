@@ -929,3 +929,31 @@ sandbox::hal::render::avk::vk_format_info sandbox::hal::render::avk::get_format_
 {
     return vk_format_table[format];
 }
+
+
+VkDeviceSize sandbox::hal::render::avk::get_buffer_alignment(vk::BufferUsageFlags usage, VkDeviceSize size)
+{
+    uint32_t queue_family = 0;
+
+    auto buffer = avk::context::device()->createBuffer(vk::BufferCreateInfo{
+        .size = size,
+        .usage = usage,
+        .sharingMode = vk::SharingMode::eExclusive,
+        .queueFamilyIndexCount = 1,
+        .pQueueFamilyIndices = &queue_family,
+    });
+
+    try {
+        auto requirements = avk::context::device()->getBufferMemoryRequirements(buffer);
+
+        if (static_cast<bool>(buffer)) {
+            avk::context::device()->destroyBuffer(buffer);
+        }
+
+        return requirements.alignment;
+    } catch (...) {
+        if (static_cast<bool>(buffer)) {
+            avk::context::device()->destroyBuffer(buffer);
+        }
+    }
+}

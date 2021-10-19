@@ -7,22 +7,6 @@
 
 namespace sandbox::hal::render::avk
 {
-    class buffer_pool;
-
-    template<typename ResourceBuilder>
-    class resource_pool
-    {
-    public:
-        template<typename... Args>
-        ResourceBuilder get_builder(Args&& ...args)
-        {
-            return ResourceBuilder{*this, std::forward<Args>(args)...};
-        }
-
-    protected:
-        typename ResourceBuilder::ResourceType m_resource;
-    };
-
     class pipeline_instance
     {
         friend class pipeline_builder;
@@ -101,8 +85,10 @@ namespace sandbox::hal::render::avk
     {
         friend class buffer_builder;
         friend class buffer_pool;
+
     public:
-        
+        buffer_instance() = default;
+
         void upload(const std::function<void(uint8_t*)>&);
         size_t get_size() const;
         size_t get_offset() const;
@@ -116,7 +102,7 @@ namespace sandbox::hal::render::avk
         vk::BufferUsageFlags m_usage{};
         uint32_t m_subresource_index{};
 
-        buffer_pool& m_pool;
+        buffer_pool* m_pool{nullptr};
         
         size_t m_size{};
         size_t m_buffer_offset{};
@@ -183,6 +169,13 @@ namespace sandbox::hal::render::avk
 
         pipeline_builder& set_shader_stages(
             const std::vector<std::pair<vk::ShaderModule, vk::ShaderStageFlagBits>>& stages_list);
+
+        pipeline_builder& set_vertex_format(
+          std::tuple<
+          const vk::VertexInputAttributeDescription*, 
+          uint32_t, 
+          const vk::VertexInputBindingDescription*, 
+          uint32_t>);
 
         pipeline_builder& set_vertex_format(
             const std::vector<vk::VertexInputAttributeDescription>& attrs,
@@ -386,16 +379,16 @@ namespace sandbox::hal::render::avk
     };
 
 
-    class buffer_pool : public resource_pool<buffer_builder>
+    class buffer_pool
     {
     public:
         void add_buffer_instance(buffer_instance* instance);
-       //void add_upload_callback(const std::function<void(uint8_t*)>&);
         void update_subresource(uint32_t subresource, const std::function<void(uint8_t*)>& cb);
 
         void flush(uint32_t queue_family, vk::CommandBuffer& command_buffer);
         void update(vk::CommandBuffer& command_buffer);
 
+        buffer_builder get_builder();
         vk::Buffer get_buffer() const;
 
     private:
@@ -417,6 +410,7 @@ namespace sandbox::hal::render::avk
         static std::pair<vk::PipelineStageFlags, vk::AccessFlags> get_pipeline_stages_acceses_by_usage(vk::BufferUsageFlags usage);
 
         void update_internal(vk::CommandBuffer& command_buffer, uint32_t update_state);
+        void upload_staging_data(uint8_t* dst);
          
         uint32_t m_queue_family{};
 
@@ -427,6 +421,7 @@ namespace sandbox::hal::render::avk
         std::unordered_set<uint32_t> m_subresources_to_update{};
 
         vk::BufferUsageFlags m_usage{};
+        avk::vma_buffer m_resource{};
         avk::vma_buffer m_staging_buffer{};
     };
     

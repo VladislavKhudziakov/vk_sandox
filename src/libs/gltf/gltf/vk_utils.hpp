@@ -62,27 +62,7 @@ namespace sandbox::gltf
 
     void draw_primitive(
         const gltf::vk_primitive& primitive,
-        const vk::Buffer& vertex_buffer,
-        const vk::Buffer& index_buffer,
         vk::CommandBuffer& command_buffer);
-
-    sandbox::hal::render::avk::graphics_pipeline create_pipeline_from_primitive(
-        const gltf::vk_primitive& primitive,
-        const std::vector<std::pair<vk::ShaderModule, vk::ShaderStageFlagBits>>& stages,
-        vk::PipelineLayout layout,
-        vk::RenderPass pass,
-        uint32_t subpass,
-
-        pipeline_primitive_topology topology = pipeline_primitive_topology::triangles,
-        pipeline_blend_mode blend = pipeline_blend_mode::none,
-        bool backfaces = false,
-        bool zwrite = true,
-        bool ztest = true,
-        bool color_write = true,
-        bool use_hierarchy = false,
-        bool use_skin = false,
-        uint32_t hierarchy_size = 1,
-        uint32_t skin_size = 1);
 
     vk::Format stb_channels_count_to_vk_format(int32_t);
 

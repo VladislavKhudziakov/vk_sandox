@@ -7,61 +7,105 @@
 
 namespace sandbox::gltf
 {
-    struct vk_primitive
+    class vk_skin_
     {
-        std::vector<vk::VertexInputAttributeDescription> attributes{};
-        std::vector<vk::VertexInputBindingDescription> bindings{};
-        uint64_t vertex_buffer_offset{0};
-        uint32_t vertices_count{0};
-        vk::IndexType index_type{vk::IndexType::eNoneKHR};
-        uint64_t index_buffer_offset{0};
-        uint32_t indices_count{0};
+        friend class vk_model_builder;
+    public:
+        const hal::render::avk::buffer_instance& get_joints_buffer() const;
+
+        uint32_t get_joints_count() const;
+        uint32_t get_hierarchy_size() const;
+
+    private:
+        hal::render::avk::buffer_instance m_joints_buffer{};
+        uint32_t m_joints_count{};
+        uint32_t m_hierarchy_size{};
+    };
+    
+
+    class vk_primitive
+    {
+        friend class vk_model_builder;
+
+    public:
+        const hal::render::avk::buffer_instance& get_vertex_buffer() const;
+        uint32_t get_vertices_count() const;
+
+        const hal::render::avk::buffer_instance& get_index_buffer() const;
+        vk::IndexType get_indices_type() const;
+        uint32_t get_indices_count() const;
+
+    private:
+        hal::render::avk::buffer_instance m_vertex_buffer{};
+        hal::render::avk::buffer_instance m_index_buffer{};
+
+        uint32_t m_vertices_count{};
+        uint32_t m_indices_count{};
+
+        vk::IndexType m_index_type{vk::IndexType::eNoneKHR};
+
+        std::pair<glm::vec3, glm::vec3> m_box_bound{};
+    };
+    
+
+    class vk_mesh
+    {
+        friend class vk_model_builder;
+    public:
+        const std::vector<vk_primitive>& get_primitives() const;
+        const vk_skin_& get_skin() const;
+        bool is_skinned() const;
+
+    private:
+        std::vector<vk_primitive> m_primitives{};
+        vk_skin_ m_skin{};
+        bool m_skinned = false;
+
+        std::pair<glm::vec3, glm::vec3> m_box_bound{};
+    };
+    
+
+    class vk_model
+    {
+        friend class vk_model_builder;
+
+    public:
+        using attribute_description = vk::VertexInputAttributeDescription;
+        using binding_description = vk::VertexInputBindingDescription;
+        using vertex_format = std::tuple<const attribute_description*, uint32_t, const binding_description*, uint32_t>;
+
+        const std::vector<vk_mesh>& get_meshes() const;
+        vertex_format get_vertex_format(); 
+
+    private:
+        std::vector<vk::VertexInputAttributeDescription> m_attributes{};
+        std::vector<vk::VertexInputBindingDescription> m_bindings{};
+
+        std::vector<vk_mesh> m_meshes{};
     };
 
 
-    class vk_geometry
-    {
-        friend class vk_geometry_builder;
-
-    public:
-        vk_geometry() = default;
-
-        vk_geometry(const vk_geometry&) = delete;
-        vk_geometry& operator=(const vk_geometry&) = delete;
-
-        vk_geometry(vk_geometry&&) noexcept = default;
-        vk_geometry& operator=(vk_geometry&&) noexcept = default;
-
-        ~vk_geometry() = default;
-
-        const std::vector<vk_primitive>& get_primitives(uint32_t mesh) const;
-
-        vk::Buffer get_vertex_buffer() const;
-        vk::Buffer get_index_buffer() const;
-
-        void clear_staging_resources();
-
-    private:
-        std::vector<std::vector<vk_primitive>> m_primitives{};
-
-        hal::render::avk::vma_buffer m_vertex_buffer{};
-        hal::render::avk::vma_buffer m_index_buffer{};
-
-        hal::render::avk::vma_buffer m_vertex_staging_buffer{};
-        hal::render::avk::vma_buffer m_index_staging_buffer{};
-    };
-
-    class vk_geometry_builder
+    class vk_model_builder
     {
     public:
-        vk_geometry_builder() = default;
-        vk_geometry_builder& set_fixed_vertex_format(const std::array<vk::Format, 8>&);
-        vk_geometry create_with_fixed_format(const gltf::model& mdl, vk::CommandBuffer& command_buffer, uint32_t queue_family);
-        vk_geometry create(const gltf::model& mdl, vk::CommandBuffer& command_buffer, uint32_t queue_family);
+        vk_model_builder() = default;
+        vk_model_builder& set_vertex_format(const std::array<vk::Format, 8>&);
+        vk_model_builder& use_skin(bool use_skin);
 
-        vk_geometry create(const gltf::model& mdl, avk::buffer_pool& pool);
+        vk_model create(const gltf::model& mdl, hal::render::avk::buffer_pool& pool);
 
     private:
+        void create_geometry(const gltf::model& mdl, vk_model& model, hal::render::avk::buffer_pool& pool);
+        void create_skins(const gltf::model& mdl, vk_model& model, hal::render::avk::buffer_pool& pool);
+        
+        void create_skins_resources(
+          const gltf::model& mdl, 
+          std::vector<vk_skin_>& result, 
+          vk_model& model, 
+          hal::render::avk::buffer_pool& pool);
+
+        void assing_skins_to_meshes(const std::vector<vk_skin_>& skins, const gltf::model& mdl, vk_model& model);
+
         void get_vertex_attributes_data_from_fixed_format(
           std::vector<vk::VertexInputAttributeDescription>& out_attributres,
           std::vector<vk::VertexInputBindingDescription>& out_bindings,
@@ -72,72 +116,10 @@ namespace sandbox::gltf
             vk::Format desired_vk_format,
             uint64_t vtx_size,
             uint64_t offset,
-            const uint8_t* dst);
-
-        std::pair<hal::render::avk::vma_buffer, hal::render::avk::vma_buffer> create_index_buffer(
-            const gltf::model& mdl,
-            size_t index_buffer_size,
-            const std::vector<std::vector<vk_primitive>>& meshes,
-            vk::CommandBuffer& command_buffer,
-            uint32_t queue_famil);
+            uint8_t* dst);
 
         std::optional<std::array<vk::Format, 8>> m_fixed_format{};
-    };
-
-    struct vk_skin
-    {
-        uint64_t offset{0};
-        uint64_t size{0};
-        uint64_t count{0};
-    };
-
-
-    class vk_geometry_skins
-    {
-        friend class skin_builder;
-
-    public:
-        static void create_skins_data(
-            const gltf::model& mdl,
-            std::vector<vk_skin>& skins,
-            hal::render::avk::vma_buffer& result_staging_buffer,
-            hal::render::avk::vma_buffer& result_dst_buffer,
-            vk::CommandBuffer& command_buffer,
-            uint32_t queue_family);
-
-        static void create_hierarchy_data(
-            const gltf::model& mdl,
-            std::vector<glm::mat4>& default_data,
-            hal::render::avk::vma_buffer& result_staging_buffer,
-            hal::render::avk::vma_buffer& result_dst_buffer,
-            vk::CommandBuffer& command_buffer,
-            uint32_t queue_family);
-
-        static vk_geometry_skins from_gltf_model(const gltf::model& mdl, vk::CommandBuffer& command_buffer, uint32_t queue_family);
-
-        const std::vector<vk_skin>& get_skins() const;
-        const std::vector<glm::mat4>& get_hierarchy_transforms() const;
-        const hal::render::avk::vma_buffer& get_hierarchy_staging_buffer() const;
-        const hal::render::avk::vma_buffer& get_hierarchy_buffer() const;
-        const hal::render::avk::vma_buffer& get_skin_buffer() const;
-
-    private:
-        struct joint_data
-        {
-            glm::mat4 inv_bind_pose{1};
-            alignas(sizeof(float) * 4) uint32_t joint{std::numeric_limits<uint32_t>::max()};
-        };
-
-        static_assert(sizeof(joint_data) == sizeof(float) * 4 * 4 + sizeof(float) * 4);
-
-        std::vector<vk_skin> m_skins{};
-        std::vector<glm::mat4> m_default_hierarchy_transforms{};
-
-        hal::render::avk::vma_buffer m_skin_buffer{};
-        hal::render::avk::vma_buffer m_hierarchy_buffer{};
-
-        hal::render::avk::vma_buffer m_skin_staging_buffer{};
-        hal::render::avk::vma_buffer m_hierarchy_staging_buffer{};
+        bool m_skinned = true;
     };
 
 

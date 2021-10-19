@@ -129,8 +129,8 @@ protected:
             .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
         });
 
-        m_geometry = gltf::vk_geometry_builder()
-                         .set_fixed_vertex_format(
+        m_geometry = gltf::vk_model_builder()
+                         .set_vertex_format(
                              {vk::Format::eR32G32B32Sfloat,
                               vk::Format::eR32G32B32Sfloat,
                               vk::Format::eR32G32B32A32Sfloat,
@@ -139,9 +139,12 @@ protected:
                               vk::Format::eR32G32B32Sfloat,
                               vk::Format::eR32G32B32A32Uint,
                               vk::Format::eR32G32B32A32Sfloat})
-                         .create_with_fixed_format(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
+                         .create(m_model, m_vertex_buffer_pool);
+
+        m_vertex_buffer_pool.flush(avk::context::queue_family(vk::QueueFlagBits::eGraphics), curr_buffer);
+
         m_texture_atlas = gltf::vk_texture_atlas::from_gltf_model(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
-        m_skins = gltf::vk_geometry_skins::from_gltf_model(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
+        //m_skins = gltf::vk_geometry_skins::from_gltf_model(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
         m_anim_list = gltf::animations_builder().create(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
 
         auto transforms_buffer_size = m_model.get_meshes().size() * sizeof(gltf::instance_transform_data);
@@ -270,28 +273,29 @@ private:
             const auto& mesh = m_model.get_meshes()[node.get_mesh()];
             const auto& materials = m_model.get_materials();
 
-            const auto& vk_primitives = m_geometry.get_primitives(node.get_mesh());
+            const auto& vk_mesh = m_geometry.get_meshes()[node.get_mesh()];
+            const auto& vk_primitives = vk_mesh.get_primitives();
+
             auto curr_vk_primitive = vk_primitives.begin();
             assert(vk_primitives.size() == mesh.get_primitives().size());
 
             for (const auto& primitive : mesh.get_primitives()) {
                 const gltf::material& curr_material = primitive.get_material() < 0 ? materials.back() : materials[primitive.get_material()];
-                const gltf::vk_skin& curr_skin = node.get_skin() < 0 ? m_skins.get_skins().back() : m_skins.get_skins()[node.get_skin()];
+                //const gltf::vk_skin& curr_skin = node.get_skin() < 0 ? m_skins.get_skins().back() : m_skins.get_skins()[node.get_skin()];
                 avk::pipeline_builder builder{};
 
-                builder.set_vertex_format(curr_vk_primitive->attributes, curr_vk_primitive->bindings)
+                builder.set_vertex_format(m_geometry.get_vertex_format())
                     .set_shader_stages({{m_vertex_shader, vk::ShaderStageFlagBits::eVertex}, {m_fragment_shader, vk::ShaderStageFlagBits::eFragment}})
                     .add_blend_state()
                     .add_push_constant(vk::ShaderStageFlagBits::eVertex, uint32_t(node_index))
                     .add_specialization_constant(uint32_t(1))                                         // use hierarchy
-                    .add_specialization_constant(uint32_t(1))                                         // use skin
-                    .add_specialization_constant(uint32_t(m_skins.get_hierarchy_transforms().size())) // hierarchy size
-                    .add_specialization_constant(uint32_t(curr_skin.count))                           // skin size
+                    .add_specialization_constant(uint32_t(vk_mesh.is_skinned()))                      // use skin
+                    .add_specialization_constant(uint32_t(vk_mesh.get_skin().get_hierarchy_size())) // hierarchy size
+                    .add_specialization_constant(uint32_t(vk_mesh.get_skin().get_joints_count()))     // skin size
                     .begin_descriptor_set()
                     .add_buffer(m_uniform_buffer.as<vk::Buffer>(), node.get_mesh() * sizeof(gltf::instance_transform_data), sizeof(gltf::instance_transform_data), vk::DescriptorType::eUniformBuffer)
-                    .add_buffer(m_hierarchy_buffer.as<vk::Buffer>(), 0, m_skins.get_hierarchy_transforms().size() * sizeof(glm::mat4), vk::DescriptorType::eStorageBuffer)
-                    //.add_buffer(m_skins.get_hierarchy_buffer().as<vk::Buffer>(), 0, m_skins.get_hierarchy_transforms().size() * sizeof(glm::mat4), vk::DescriptorType::eUniformBuffer)
-                    .add_buffer(m_skins.get_skin_buffer().as<vk::Buffer>(), curr_skin.offset, curr_skin.size, vk::DescriptorType::eUniformBuffer);
+                    .add_buffer(m_hierarchy_buffer.as<vk::Buffer>(), 0, vk_mesh.get_skin().get_hierarchy_size() * sizeof(glm::mat4), vk::DescriptorType::eStorageBuffer)
+                    .add_buffer(vk_mesh.get_skin().get_joints_buffer(), vk::DescriptorType::eUniformBuffer);
 
                 curr_material.for_each_texture([this, &builder](const gltf::material::texture_data& tex_data) {
                     const auto& vk_tex = m_texture_atlas.get_texture(tex_data.index);
@@ -398,9 +402,9 @@ private:
 
             auto curr_pipeline = m_models_primitives_pipelines[node.get_mesh()].begin();
 
-            for (const auto& primitive : m_geometry.get_primitives(node.get_mesh())) {
+            for (const auto& primitive : m_geometry.get_meshes()[node.get_mesh()].get_primitives()) {
                 curr_pipeline++->activate(command_buffer);
-                gltf::draw_primitive(primitive, m_geometry.get_vertex_buffer(), m_geometry.get_index_buffer(), command_buffer);
+                gltf::draw_primitive(primitive, command_buffer);
             }
         });
 
@@ -409,9 +413,10 @@ private:
     }
 
     gltf::model m_model{};
-    gltf::vk_geometry m_geometry{};
+    //gltf::vk_geometry m_geometry{};
+    gltf::vk_model m_geometry{};
     gltf::vk_texture_atlas m_texture_atlas{};
-    gltf::vk_geometry_skins m_skins{};
+    //gltf::vk_geometry_skins m_skins{};
     gltf::vk_animations_list m_anim_list{};
 
     avk::pipeline_instance m_animation_pipeline{};
@@ -424,6 +429,8 @@ private:
 
     avk::command_pool m_command_pool{};
     avk::command_buffer_list m_command_buffer{};
+
+    avk::buffer_pool m_vertex_buffer_pool{};
 
     avk::shader_module m_vertex_shader{};
     avk::shader_module m_fragment_shader{};

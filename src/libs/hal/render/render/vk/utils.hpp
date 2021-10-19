@@ -156,6 +156,7 @@ namespace sandbox::hal::render::avk
         VkDeviceSize size,
         const std::function<void(const uint8_t* dst)>& upload);
 
+    VkDeviceSize get_buffer_alignment(vk::BufferUsageFlags usage);
 
     struct vk_format_info
     {
@@ -165,4 +166,5 @@ namespace sandbox::hal::render::avk
 
     vk_format_info get_format_info(VkFormat format);
 
+    VkDeviceSize get_buffer_alignment(vk::BufferUsageFlags usage, VkDeviceSize size);
 } // namespace sandbox::hal::render::avk

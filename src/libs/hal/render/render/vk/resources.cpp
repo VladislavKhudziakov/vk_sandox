@@ -62,8 +62,36 @@ avk::pipeline_builder& avk::pipeline_builder::set_vertex_format(
 }
 
 
+avk::pipeline_builder& sandbox::hal::render::avk::pipeline_builder::set_vertex_format(
+    std::tuple<
+        const vk::VertexInputAttributeDescription*,
+        uint32_t,
+        const vk::VertexInputBindingDescription*,
+        uint32_t> fmt)
+{
+    auto [attrs, a_count, bindings, b_count] = fmt;
+
+    m_vertex_attributes.clear();
+    m_vertex_attributes.reserve(a_count);
+    std::copy(attrs, attrs + a_count, std::back_inserter(m_vertex_attributes));
+
+    m_vertex_bingings.clear();
+    m_vertex_bingings.reserve(b_count);
+    std::copy(bindings, bindings + b_count, std::back_inserter(m_vertex_bingings));
+
+    m_vertex_input_state = vk::PipelineVertexInputStateCreateInfo{
+        .flags = {},
+        .vertexBindingDescriptionCount = static_cast<uint32_t>(m_vertex_bingings.size()),
+        .pVertexBindingDescriptions = m_vertex_bingings.data(),
+        .vertexAttributeDescriptionCount = static_cast<uint32_t>(m_vertex_attributes.size()),
+        .pVertexAttributeDescriptions = m_vertex_attributes.data()};
+
+    return *this;
+}
+
+
 avk::buffer_instance::buffer_instance(avk::buffer_pool& pool)
-    : m_pool(pool)
+    : m_pool(&pool)
 {
 }
 
@@ -72,8 +100,8 @@ void avk::buffer_instance::upload(const std::function<void(uint8_t*)>& upd_callb
 {
     CHECK(is_updatable());
 
-    m_pool.update_subresource(m_subresource_index, [this, upd_callback](uint8_t* dst) {
-        upd_callback(dst + m_staging_buffer_offset);
+    m_pool->update_subresource(m_subresource_index, [offset = m_staging_buffer_offset, upd_callback](uint8_t* dst) {
+        upd_callback(dst + offset);
     });
 }
 
@@ -92,7 +120,7 @@ size_t avk::buffer_instance::get_offset() const
 
 avk::buffer_instance::operator vk::Buffer() const
 {
-    return m_pool.get_buffer();
+    return m_pool->get_buffer();
 }
 
 
@@ -236,7 +264,7 @@ avk::pipeline_builder& avk::pipeline_builder::add_buffers(
 
 avk::pipeline_builder& avk::pipeline_builder::add_buffer(const buffer_instance& instance, vk::DescriptorType type)
 {
-    return add_buffer(instance, instance.get_size(), instance.get_offset(), type);
+    return add_buffer(instance, instance.get_offset(), instance.get_size(), type);
 }
 
 avk::pipeline_builder& avk::pipeline_builder::add_buffers(const std::vector<buffer_instance>& instance_list, vk::DescriptorType type)
@@ -244,7 +272,7 @@ avk::pipeline_builder& avk::pipeline_builder::add_buffers(const std::vector<buff
     std::vector<vk::Buffer> vk_buffers{instance_list.size()};
     std::transform(instance_list.begin(), instance_list.end(), vk_buffers.begin(), [](const buffer_instance& i) { return i;});
     std::vector<std::pair<VkDeviceSize, VkDeviceSize>> size_offsets{instance_list.size()};
-    std::transform(instance_list.begin(), instance_list.end(), size_offsets.begin(), [](const buffer_instance& i) { return std::make_pair<VkDeviceSize, VkDeviceSize>(i.get_size(), i.get_offset()); });
+    std::transform(instance_list.begin(), instance_list.end(), size_offsets.begin(), [](const buffer_instance& i) { return std::make_pair<VkDeviceSize, VkDeviceSize>(i.get_offset(), i.get_size()); });
 
     return add_buffers(vk_buffers, size_offsets, type);
 }
@@ -833,13 +861,16 @@ avk::buffer_instance avk::buffer_builder::create(const std::function<void(uint8_
 
 void avk::buffer_pool::add_buffer_instance(buffer_instance* instance)
 {
-    instance->m_buffer_offset = m_size;
-    m_size += instance->m_size;
-
     if (instance->is_updatable()) {
         instance->m_staging_buffer_offset = m_staging_size;
-        m_staging_size += instance->m_buffer_offset;
+        m_staging_size += instance->m_size;
     }
+
+    auto alignment = avk::get_buffer_alignment(instance->m_usage, instance->m_size);
+    m_size = m_size + (alignment - 1) & ~(alignment - 1);
+
+    instance->m_buffer_offset = m_size;
+    m_size += instance->m_size;
 
     instance->m_subresource_index = m_subresources.size();
 
@@ -849,6 +880,8 @@ void avk::buffer_pool::add_buffer_instance(buffer_instance* instance)
         .staging_offset = instance->m_staging_buffer_offset,
         .usage = instance->m_usage
     });
+
+    m_usage |= instance->m_usage;
 }
 
 
@@ -863,9 +896,7 @@ void avk::buffer_pool::flush(uint32_t queue_family, vk::CommandBuffer& command_b
 {
     if (m_staging_size > 0) {
         m_staging_buffer = avk::gen_staging_buffer(queue_family, m_staging_size, [this](uint8_t* dst) {
-            for (const auto& cp : m_upload_callbacks) {
-                cp(dst);
-            }
+            upload_staging_data(dst);
         });
     }
 
@@ -959,11 +990,7 @@ void avk::buffer_pool::update_internal(
 
             ASSERT(res == VK_SUCCESS);
 
-            for (const auto& cp : m_upload_callbacks) {
-                cp(static_cast<uint8_t*>(dst_ptr));
-            }
-
-            m_upload_callbacks.clear();
+            upload_staging_data(static_cast<uint8_t*>(dst_ptr));
         }
     }
 
@@ -1006,4 +1033,18 @@ void avk::buffer_pool::update_internal(
 
         m_subresources_to_update.clear();
     }
+}
+
+void sandbox::hal::render::avk::buffer_pool::upload_staging_data(uint8_t* dst)
+{
+    for (const auto& cp : m_upload_callbacks) {
+        cp(static_cast<uint8_t*>(dst));
+    }
+
+    m_upload_callbacks.clear();
+}
+
+avk::buffer_builder sandbox::hal::render::avk::buffer_pool::get_builder()
+{
+    return buffer_builder(*this);
 }
