@@ -98,6 +98,34 @@ primitive::vertex_attribute primitive::attribute_at_path(const model& model, att
 }
 
 
+uint64_t sandbox::gltf::primitive::get_vertices_count(const gltf::model& model) const
+{
+    return attribute_at_path(model, gltf::attribute_path::position).elements_count;
+}
+
+
+uint64_t sandbox::gltf::primitive::get_indices_count(const gltf::model& model) const
+{
+    if (m_indices < 0) {
+        return 0;
+    }
+
+    return model.get_accessors()[m_indices].get_count();
+}
+
+
+std::pair<const uint8_t*, gltf::component_type> sandbox::gltf::primitive::get_indices_data(const gltf::model& model) const
+{
+    if (m_indices < 0) {
+        return {};
+    }
+
+    const auto& accessor = model.get_accessors()[m_indices];
+    
+    return {accessor.get_data(model), accessor.get_component_type()};
+}
+
+
 mesh::mesh(const nlohmann::json& mesh_json)
 {
     m_primitives.reserve(mesh_json["primitives"].size());
@@ -622,6 +650,16 @@ const uint8_t* accessor::get_data(
     size_t buffer_views_size) const
 {
     return buffer_views[m_buffer_view].get_data(buffers, buffers_size) + m_byte_offset;
+}
+
+
+
+const uint8_t* sandbox::gltf::accessor::get_data(const model& model) const
+{
+    const auto& buffers = model.get_buffers();
+    const auto& buffer_views = model.get_buffer_views();
+
+    return get_data(buffers.data(), buffers.size(), buffer_views.data(), buffer_views.size());
 }
 
 

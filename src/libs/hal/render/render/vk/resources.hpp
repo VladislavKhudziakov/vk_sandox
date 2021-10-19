@@ -3,8 +3,26 @@
 #include <render/vk/raii.hpp>
 #include <utils/conditions_helpers.hpp>
 
+#include<unordered_set>
+
 namespace sandbox::hal::render::avk
 {
+    class buffer_pool;
+
+    template<typename ResourceBuilder>
+    class resource_pool
+    {
+    public:
+        template<typename... Args>
+        ResourceBuilder get_builder(Args&& ...args)
+        {
+            return ResourceBuilder{*this, std::forward<Args>(args)...};
+        }
+
+    protected:
+        typename ResourceBuilder::ResourceType m_resource;
+    };
+
     class pipeline_instance
     {
         friend class pipeline_builder;
@@ -76,6 +94,33 @@ namespace sandbox::hal::render::avk
         uint32_t m_current_framebuffer_index{0};
         uint32_t m_framebuffer_width{};
         uint32_t m_framebuffer_height{};
+    };
+
+
+    class buffer_instance
+    {
+        friend class buffer_builder;
+        friend class buffer_pool;
+    public:
+        
+        void upload(const std::function<void(uint8_t*)>&);
+        size_t get_size() const;
+        size_t get_offset() const;
+        operator vk::Buffer() const;
+
+        bool is_updatable() const;
+
+    private:
+        explicit buffer_instance(avk::buffer_pool& pool);
+
+        vk::BufferUsageFlags m_usage{};
+        uint32_t m_subresource_index{};
+
+        buffer_pool& m_pool;
+        
+        size_t m_size{};
+        size_t m_buffer_offset{};
+        size_t m_staging_buffer_offset{size_t(-1)};
     };
 
 
@@ -156,6 +201,12 @@ namespace sandbox::hal::render::avk
             const std::vector<vk::Buffer>&,
             const std::vector<std::pair<VkDeviceSize, VkDeviceSize>>&,
             vk::DescriptorType type);
+
+        pipeline_builder& add_buffer(const buffer_instance&, vk::DescriptorType type);
+
+        pipeline_builder& add_buffers(
+          const std::vector<buffer_instance>&,
+          vk::DescriptorType type);
 
         pipeline_builder& add_texture(vk::ImageView, vk::Sampler);
         pipeline_builder& add_textures(const std::vector<vk::ImageView>&, const std::vector<vk::Sampler>&);
@@ -315,4 +366,68 @@ namespace sandbox::hal::render::avk
         std::vector<vk::SubpassDescription> m_sub_passes{};
         std::vector<vk::SubpassDependency> m_sub_pass_dependencies{};
     };
+
+
+    class buffer_builder
+    {
+    public:
+        using ResourceType = avk::vma_buffer;
+        explicit buffer_builder(buffer_pool& pool);
+
+        buffer_builder& set_size(size_t);
+        buffer_builder& set_usage(vk::BufferUsageFlags);
+        buffer_instance create(const std::function<void(uint8_t*)>& = {});
+
+    private:
+        buffer_pool& m_pool;
+
+        size_t m_size{};
+        vk::BufferUsageFlags m_usage{};
+    };
+
+
+    class buffer_pool : public resource_pool<buffer_builder>
+    {
+    public:
+        void add_buffer_instance(buffer_instance* instance);
+       //void add_upload_callback(const std::function<void(uint8_t*)>&);
+        void update_subresource(uint32_t subresource, const std::function<void(uint8_t*)>& cb);
+
+        void flush(uint32_t queue_family, vk::CommandBuffer& command_buffer);
+        void update(vk::CommandBuffer& command_buffer);
+
+        vk::Buffer get_buffer() const;
+
+    private:
+        enum update_state_flags
+        {
+            UPDATE_NONE = 0,
+            UPDATE_STAGING_BUFFER_BIT = 1 << 0,
+            UPDATE_RESOURCE_BUFFER_BIT = 1 << 1,
+        };
+
+        struct buffer_subresource
+        {
+            size_t size{0};
+            size_t offset{0};
+            size_t staging_offset{0};
+            vk::BufferUsageFlags usage{};
+        };
+
+        static std::pair<vk::PipelineStageFlags, vk::AccessFlags> get_pipeline_stages_acceses_by_usage(vk::BufferUsageFlags usage);
+
+        void update_internal(vk::CommandBuffer& command_buffer, uint32_t update_state);
+         
+        uint32_t m_queue_family{};
+
+        size_t m_size{};
+        size_t m_staging_size{};
+        std::vector <std::function<void(uint8_t*)>> m_upload_callbacks{};
+        std::vector<buffer_subresource> m_subresources{};
+        std::unordered_set<uint32_t> m_subresources_to_update{};
+
+        vk::BufferUsageFlags m_usage{};
+        avk::vma_buffer m_staging_buffer{};
+    };
+    
 } // namespace sandbox::hal::render::avk

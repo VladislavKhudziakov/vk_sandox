@@ -1,7 +1,7 @@
 #pragma once
 
 #include <gltf/gltf_base.hpp>
-#include <render/vk/raii.hpp>
+#include <render/vk/resources.hpp>
 
 #include <string>
 
@@ -59,7 +59,14 @@ namespace sandbox::gltf
         vk_geometry create_with_fixed_format(const gltf::model& mdl, vk::CommandBuffer& command_buffer, uint32_t queue_family);
         vk_geometry create(const gltf::model& mdl, vk::CommandBuffer& command_buffer, uint32_t queue_family);
 
+        vk_geometry create(const gltf::model& mdl, avk::buffer_pool& pool);
+
     private:
+        void get_vertex_attributes_data_from_fixed_format(
+          std::vector<vk::VertexInputAttributeDescription>& out_attributres,
+          std::vector<vk::VertexInputBindingDescription>& out_bindings,
+          uint32_t& out_vertex_size);
+
         void copy_attribute_data(
             const gltf::primitive::vertex_attribute& attribute,
             vk::Format desired_vk_format,

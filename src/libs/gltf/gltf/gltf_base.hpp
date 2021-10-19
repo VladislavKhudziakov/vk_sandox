@@ -50,6 +50,7 @@ namespace sandbox::gltf
             const buffer_view* buffer_views,
             size_t buffer_views_size) const;
 
+        const uint8_t* get_data(const model&) const;
 
         explicit accessor(const nlohmann::json& accessor_json);
 
@@ -203,6 +204,10 @@ namespace sandbox::gltf
 
         int32_t attribute_at_path(attribute_path path) const;
         vertex_attribute attribute_at_path(const gltf::model& model, attribute_path path) const;
+
+        uint64_t get_vertices_count(const gltf::model&) const;
+        uint64_t get_indices_count(const gltf::model&) const;
+        std::pair<const uint8_t*, gltf::component_type> get_indices_data(const gltf::model&) const;
 
     private:
         std::vector<uint32_t> m_attributes{};

@@ -1,6 +1,7 @@
 #include "resources.hpp"
 
 #include <render/vk/utils.hpp>
+#include<utils/scope_helpers.hpp>
 
 using namespace sandbox::hal::render;
 
@@ -30,7 +31,7 @@ avk::pipeline_builder::pipeline_builder()
 }
 
 
-avk::pipeline_instance sandbox::hal::render::avk::pipeline_builder::create_graphics_pipeline(vk::RenderPass pass, uint32_t subpass)
+avk::pipeline_instance avk::pipeline_builder::create_graphics_pipeline(vk::RenderPass pass, uint32_t subpass)
 {
     m_pass = pass;
     m_subpass = subpass;
@@ -39,7 +40,7 @@ avk::pipeline_instance sandbox::hal::render::avk::pipeline_builder::create_graph
 }
 
 
-avk::pipeline_instance sandbox::hal::render::avk::pipeline_builder::create_compute_pipeline()
+avk::pipeline_instance avk::pipeline_builder::create_compute_pipeline()
 {
     return create_pipeline(vk::PipelineBindPoint::eCompute);
 }
@@ -61,14 +62,54 @@ avk::pipeline_builder& avk::pipeline_builder::set_vertex_format(
 }
 
 
-avk::pipeline_builder& sandbox::hal::render::avk::pipeline_builder::begin_descriptor_set()
+avk::buffer_instance::buffer_instance(avk::buffer_pool& pool)
+    : m_pool(pool)
+{
+}
+
+
+void avk::buffer_instance::upload(const std::function<void(uint8_t*)>& upd_callback)
+{
+    CHECK(is_updatable());
+
+    m_pool.update_subresource(m_subresource_index, [this, upd_callback](uint8_t* dst) {
+        upd_callback(dst + m_staging_buffer_offset);
+    });
+}
+
+
+size_t avk::buffer_instance::get_size() const
+{
+    return m_size;
+}
+
+
+size_t avk::buffer_instance::get_offset() const
+{
+    return m_buffer_offset;
+}
+
+
+avk::buffer_instance::operator vk::Buffer() const
+{
+    return m_pool.get_buffer();
+}
+
+
+bool avk::buffer_instance::is_updatable() const
+{
+    return static_cast<bool>(m_usage & vk::BufferUsageFlagBits::eTransferDst);
+}
+
+
+avk::pipeline_builder& avk::pipeline_builder::begin_descriptor_set()
 {
     m_descriptor_sets.emplace_back();
     return *this;
 }
 
 
-avk::pipeline_builder& sandbox::hal::render::avk::pipeline_builder::finish_descriptor_set()
+avk::pipeline_builder& avk::pipeline_builder::finish_descriptor_set()
 {
     return *this;
 }
@@ -193,6 +234,22 @@ avk::pipeline_builder& avk::pipeline_builder::add_buffers(
 }
 
 
+avk::pipeline_builder& avk::pipeline_builder::add_buffer(const buffer_instance& instance, vk::DescriptorType type)
+{
+    return add_buffer(instance, instance.get_size(), instance.get_offset(), type);
+}
+
+avk::pipeline_builder& avk::pipeline_builder::add_buffers(const std::vector<buffer_instance>& instance_list, vk::DescriptorType type)
+{
+    std::vector<vk::Buffer> vk_buffers{instance_list.size()};
+    std::transform(instance_list.begin(), instance_list.end(), vk_buffers.begin(), [](const buffer_instance& i) { return i;});
+    std::vector<std::pair<VkDeviceSize, VkDeviceSize>> size_offsets{instance_list.size()};
+    std::transform(instance_list.begin(), instance_list.end(), size_offsets.begin(), [](const buffer_instance& i) { return std::make_pair<VkDeviceSize, VkDeviceSize>(i.get_size(), i.get_offset()); });
+
+    return add_buffers(vk_buffers, size_offsets, type);
+}
+
+
 avk::pipeline_builder& avk::pipeline_builder::add_texture(vk::ImageView image_view, vk::Sampler image_sampler)
 {
     auto& curr_set = m_descriptor_sets.back();
@@ -243,7 +300,7 @@ avk::pipeline_builder& avk::pipeline_builder::add_textures(
     return *this;
 }
 
-avk::pipeline_builder& sandbox::hal::render::avk::pipeline_builder::add_blend_state()
+avk::pipeline_builder& avk::pipeline_builder::add_blend_state()
 {
     // clang-format off
     m_attachments_blend_states.emplace_back(vk::PipelineColorBlendAttachmentState{
@@ -731,4 +788,222 @@ avk::render_pass_builder& avk::render_pass_builder::add_sub_pass_dependency(cons
 {
     m_sub_pass_dependencies.emplace_back(dep);
     return *this;
+}
+
+
+avk::buffer_builder::buffer_builder(buffer_pool& pool)
+    : m_pool(pool)
+{
+}
+
+
+avk::buffer_builder& avk::buffer_builder::set_size(size_t size)
+{
+    m_size = size;
+    return *this;
+}
+
+
+avk::buffer_builder& avk::buffer_builder::set_usage(vk::BufferUsageFlags usage)
+{
+    m_usage = usage;
+    return *this;
+}
+
+
+avk::buffer_instance avk::buffer_builder::create(const std::function<void(uint8_t*)>& copy_callback)
+{
+    buffer_instance result{m_pool};
+
+    CHECK_MSG(m_size > 0, "Cannot create empty buffer.");
+    CHECK_MSG(static_cast<uint32_t>(m_usage) != 0, "Buffer usage didn't specified.");
+
+    result.m_size = m_size;
+    result.m_usage = m_usage;
+
+    m_pool.add_buffer_instance(&result);
+
+    if (copy_callback) {
+        result.upload(copy_callback);
+    }
+
+    return result;
+}
+
+
+void avk::buffer_pool::add_buffer_instance(buffer_instance* instance)
+{
+    instance->m_buffer_offset = m_size;
+    m_size += instance->m_size;
+
+    if (instance->is_updatable()) {
+        instance->m_staging_buffer_offset = m_staging_size;
+        m_staging_size += instance->m_buffer_offset;
+    }
+
+    instance->m_subresource_index = m_subresources.size();
+
+    m_subresources.emplace_back(buffer_subresource{
+        .size = instance->m_size,
+        .offset = instance->m_buffer_offset,
+        .staging_offset = instance->m_staging_buffer_offset,
+        .usage = instance->m_usage
+    });
+}
+
+
+void sandbox::hal::render::avk::buffer_pool::update_subresource(uint32_t subresource, const std::function<void(uint8_t*)>& cb)
+{
+    m_upload_callbacks.emplace_back(cb);
+    m_subresources_to_update.emplace(subresource);
+}
+
+
+void avk::buffer_pool::flush(uint32_t queue_family, vk::CommandBuffer& command_buffer)
+{
+    if (m_staging_size > 0) {
+        m_staging_buffer = avk::gen_staging_buffer(queue_family, m_staging_size, [this](uint8_t* dst) {
+            for (const auto& cp : m_upload_callbacks) {
+                cp(dst);
+            }
+        });
+    }
+
+    m_resource = avk::create_vma_buffer(
+        vk::BufferCreateInfo{
+            .flags = {},
+            .size = m_size,
+            .usage = m_usage,
+            .sharingMode = vk::SharingMode::eExclusive,
+            .queueFamilyIndexCount = 1,
+            .pQueueFamilyIndices = &queue_family},
+        VmaAllocationCreateInfo{
+            .usage = VMA_MEMORY_USAGE_GPU_ONLY});
+
+    update_internal(command_buffer, UPDATE_RESOURCE_BUFFER_BIT);
+    m_upload_callbacks.clear();
+}
+
+
+void avk::buffer_pool::update(vk::CommandBuffer& command_buffer)
+{
+    update_internal(command_buffer, UPDATE_STAGING_BUFFER_BIT | UPDATE_RESOURCE_BUFFER_BIT);
+}
+
+
+vk::Buffer avk::buffer_pool::get_buffer() const
+{
+    return m_resource.as<vk::Buffer>();
+}
+
+
+std::pair<vk::PipelineStageFlags, vk::AccessFlags> 
+avk::buffer_pool::get_pipeline_stages_acceses_by_usage(vk::BufferUsageFlags usage)
+{
+    vk::PipelineStageFlags dst_stage{};
+    vk::AccessFlags dst_access{};
+
+    if (usage & vk::BufferUsageFlagBits::eUniformBuffer || usage & vk::BufferUsageFlagBits::eStorageBuffer) {
+        dst_stage |= vk::PipelineStageFlagBits::eComputeShader;
+        dst_stage |= vk::PipelineStageFlagBits::eVertexShader;
+        dst_stage |= vk::PipelineStageFlagBits::eTessellationControlShader;
+        dst_stage |= vk::PipelineStageFlagBits::eTessellationEvaluationShader;
+        dst_stage |= vk::PipelineStageFlagBits::eGeometryShader;
+        dst_stage |= vk::PipelineStageFlagBits::eFragmentShader;
+
+        if (usage & vk::BufferUsageFlagBits::eUniformBuffer) {
+            dst_access |= vk::AccessFlagBits::eUniformRead;
+        }
+
+        if (usage & vk::BufferUsageFlagBits::eStorageBuffer) {
+            dst_access |= vk::AccessFlagBits::eShaderRead;
+        }
+    }
+
+    if (usage & vk::BufferUsageFlagBits::eIndexBuffer) {
+        dst_stage |= vk::PipelineStageFlagBits::eVertexInput;
+        dst_access |= vk::AccessFlagBits::eVertexAttributeRead;
+    }
+
+    if (usage & vk::BufferUsageFlagBits::eVertexBuffer) {
+        dst_stage |= vk::PipelineStageFlagBits::eVertexInput;
+        dst_access |= vk::AccessFlagBits::eIndexRead;
+    }
+
+    if (usage & vk::BufferUsageFlagBits::eIndirectBuffer) {
+        dst_stage |= vk::PipelineStageFlagBits::eDrawIndirect;
+    }
+
+    return {dst_stage, dst_access};
+}
+
+
+void avk::buffer_pool::update_internal(
+  vk::CommandBuffer& command_buffer, 
+  uint32_t update_state)
+{
+    if (update_state & UPDATE_STAGING_BUFFER_BIT) {
+        if (!m_upload_callbacks.empty()) {
+            void* dst_ptr{nullptr};
+            auto res = vmaMapMemory(avk::context::allocator(), m_staging_buffer.as<VmaAllocation>(), &dst_ptr);
+
+            utils::on_scope_exit scope_guard{[this, res]() {
+                if (res == VK_SUCCESS) {
+                    vmaUnmapMemory(avk::context::allocator(), m_staging_buffer.as<VmaAllocation>());
+                    VkDeviceSize offset = 0;
+                    VkDeviceSize size = m_staging_buffer->get_alloc_info().size;
+                    VmaAllocation allocation = m_staging_buffer.as<VmaAllocation>();
+                    vmaFlushAllocations(avk::context::allocator(), 1, &allocation, &offset, &size);
+                }
+            }};
+
+            ASSERT(res == VK_SUCCESS);
+
+            for (const auto& cp : m_upload_callbacks) {
+                cp(static_cast<uint8_t*>(dst_ptr));
+            }
+
+            m_upload_callbacks.clear();
+        }
+    }
+
+    if (update_state & UPDATE_RESOURCE_BUFFER_BIT) {
+        std::vector<vk::BufferCopy> buffer_copies{};
+        std::vector<vk::BufferMemoryBarrier> buffer_barriers{};
+
+        buffer_copies.reserve(m_subresources_to_update.size());
+        buffer_barriers.reserve(m_subresources_to_update.size());
+
+        vk::PipelineStageFlags dst_stages{};
+
+        for (const auto subres_index : m_subresources_to_update) {
+            const auto& subres = m_subresources[subres_index];
+
+            auto [curr_dst_stage, dst_access] = get_pipeline_stages_acceses_by_usage(subres.usage);
+
+            dst_stages |= curr_dst_stage;
+
+            buffer_copies.emplace_back(vk::BufferCopy{
+                .srcOffset = static_cast<VkDeviceSize>(subres.staging_offset),
+                .dstOffset = static_cast<VkDeviceSize>(subres.offset),
+                .size = static_cast<VkDeviceSize>(subres.size),
+            });
+
+            buffer_barriers.emplace_back(vk::BufferMemoryBarrier{
+                .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+                .dstAccessMask = dst_access,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .buffer = m_resource.as<vk::Buffer>(),
+                .offset = static_cast<VkDeviceSize>(subres.offset),
+                .size = static_cast<VkDeviceSize>(subres.size)});
+        }
+
+        if (!buffer_copies.empty()) {
+            command_buffer.copyBuffer(m_staging_buffer.as<vk::Buffer>(), m_resource.as<vk::Buffer>(), buffer_copies);
+            command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, dst_stages, {}, {}, buffer_barriers, {});
+        }
+
+        m_subresources_to_update.clear();
+    }
 }

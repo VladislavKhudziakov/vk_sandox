@@ -490,33 +490,11 @@ gltf::vk_geometry gltf::vk_geometry_builder::create_with_fixed_format(
     vk::CommandBuffer& command_buffer,
     uint32_t queue_family)
 {
-    if (!m_fixed_format) {
-        throw std::runtime_error("Fixed vertex format wasn't settled.");
-    }
-
     std::vector<vk::VertexInputAttributeDescription> attributes{};
     std::vector<vk::VertexInputBindingDescription> bindings{};
-
-    attributes.reserve(m_fixed_format->size());
-    bindings.reserve(1);
-
     uint32_t vertex_size = 0;
-    uint32_t attribute_location = 0;
 
-    for (const vk::Format vk_fmt : *m_fixed_format) {
-        attributes.emplace_back(vk::VertexInputAttributeDescription{
-            .location = attribute_location++,
-            .binding = 0,
-            .format = vk_fmt,
-            .offset = vertex_size});
-
-        vertex_size += avk::get_format_info(static_cast<VkFormat>(vk_fmt)).size;
-    }
-
-    bindings.emplace_back(vk::VertexInputBindingDescription{
-        .binding = 0,
-        .stride = vertex_size,
-        .inputRate = vk::VertexInputRate::eVertex});
+    get_vertex_attributes_data_from_fixed_format(attributes, bindings, vertex_size);
 
     gltf::vk_geometry new_geometry{};
 
@@ -703,8 +681,90 @@ gltf::vk_geometry gltf::vk_geometry_builder::create(
     new_geometry.m_vertex_buffer = std::move(vertex_buffer);
     new_geometry.m_index_staging_buffer = std::move(index_staging_buffer);
     new_geometry.m_index_buffer = std::move(index_buffer);
-
+    
     return new_geometry;
+}
+
+
+gltf::vk_geometry sandbox::gltf::vk_geometry_builder::create(const gltf::model& mdl, avk::buffer_pool& pool)
+{
+    std::vector<vk::VertexInputAttributeDescription> attributes{};
+    std::vector<vk::VertexInputBindingDescription> bindings{};
+    uint32_t vertex_size = 0;
+
+    get_vertex_attributes_data_from_fixed_format(attributes, bindings, vertex_size);
+
+    for (const auto& mesh : mdl.get_meshes()) {
+        for (const auto& primitive : mesh.get_primitives()) {
+            auto vertex_buffer_bulder = pool.get_builder();
+            vertex_buffer_bulder.set_size(primitive.get_vertices_count(mdl) * vertex_size);
+            vertex_buffer_bulder.set_usage(vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst);
+
+            auto vertex_buffer = vertex_buffer_bulder.create([this, &mdl, &primitive, vertex_size](uint8_t* dst) {
+                uint32_t attr_offset = 0;
+
+                for (uint32_t i = 0; i < m_fixed_format->size(); ++i) {
+                    auto curr_path = static_cast<attribute_path>(i);
+                    const auto attribute = primitive.attribute_at_path(mdl, static_cast<attribute_path>(i));
+                    copy_attribute_data(attribute, m_fixed_format->at(i), vertex_size, attr_offset, dst);
+                    attr_offset += avk::get_format_info(static_cast<VkFormat>(m_fixed_format->at(i))).size;
+                }
+            });
+            
+            if (primitive.get_indices_count(mdl) > 0) {
+                auto index_buffer_bulder = pool.get_builder();
+                primitive.get_indices_data(mdl);
+
+                auto [index_data, indices_type] = primitive.get_indices_data(mdl);
+                auto elements_count = primitive.get_indices_count(mdl);
+                
+                auto element_size = avk::get_format_info(static_cast<VkFormat>(
+                  to_vk_format(gltf::accessor_type::scalar, indices_type))).size;
+
+                index_buffer_bulder.set_size(elements_count * element_size);
+                index_buffer_bulder.set_usage(vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst);
+
+                auto index_buffer = index_buffer_bulder.create([index_data, elements_count, element_size](uint8_t* dst) {
+                    std::memcpy(dst, index_data, elements_count * element_size);
+                });
+            }
+        }
+    }
+
+    return vk_geometry();
+}
+
+
+void sandbox::gltf::vk_geometry_builder::get_vertex_attributes_data_from_fixed_format(
+    std::vector<vk::VertexInputAttributeDescription>& out_attributres,
+    std::vector<vk::VertexInputBindingDescription>& out_bindings,
+    uint32_t& out_vertex_size)
+{
+    CHECK_MSG(m_fixed_format, "Fixed vertex format didn't specified.");
+
+    out_attributres.clear();
+    out_bindings.clear();
+
+    out_attributres.reserve(m_fixed_format->size());
+    out_bindings.reserve(1);
+
+    out_vertex_size = 0;
+    uint32_t attribute_location = 0;
+
+    for (const vk::Format vk_fmt : *m_fixed_format) {
+        out_attributres.emplace_back(vk::VertexInputAttributeDescription{
+            .location = attribute_location++,
+            .binding = 0,
+            .format = vk_fmt,
+            .offset = out_vertex_size});
+
+        out_vertex_size += avk::get_format_info(static_cast<VkFormat>(vk_fmt)).size;
+    }
+
+    out_bindings.emplace_back(vk::VertexInputBindingDescription{
+        .binding = 0,
+        .stride = out_vertex_size,
+        .inputRate = vk::VertexInputRate::eVertex});
 }
 
 
