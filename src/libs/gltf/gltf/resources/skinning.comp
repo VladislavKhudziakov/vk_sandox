@@ -14,7 +14,7 @@ const int ANIM_INTERPOLATION_STEP = 1;
 const int ANIM_PATH_CUBIC_SPLINE = 2;
 
 layout(constant_id = 0) const uint ANIMATIONS_COUNT = 1;
-layout(constant_id = 1) const uint NODES_COUNT = 22;
+layout(constant_id = 1) const uint NODES_COUNT = 1;
 layout(constant_id = 2) const uint BATCH_SIZE = 1;
 
 
@@ -49,25 +49,31 @@ layout(set = 0, binding = 1) readonly buffer animation_meta
 }
 animations_metas[ANIMATIONS_COUNT];
 
-layout(set = 0, binding = 2) readonly buffer animation_samplers
+layout(set = 0, binding = 2) readonly buffer animation_keys_timestamps
 {
-    anim_sampler samplers[];
+    vec4 ts[];
 }
-animations[ANIMATIONS_COUNT];
+animations_keys_timestamps[ANIMATIONS_COUNT];
 
-layout(set = 0, binding = 3) readonly buffer in_execution_order_data
+layout(set = 0, binding = 3) readonly buffer animation_keys
+{
+    TRS keys[];
+}
+animations_keys[ANIMATIONS_COUNT];
+
+layout(set = 0, binding = 4) readonly buffer in_execution_order_data
 {
     ivec4 indices[];
 }
 execution_orders[ANIMATIONS_COUNT];
 
-layout(set = 0, binding = 4) readonly buffer in_hierarchy_data
+layout(set = 0, binding = 5) readonly buffer in_hierarchy_data
 {
     ivec4 nodes_child_indices[];
 }
 in_hierarchies[ANIMATIONS_COUNT];
 
-layout(set = 0, binding = 5) buffer out_hierarchy_data
+layout(set = 0, binding = 6) buffer out_hierarchy_data
 {
     mat4 nodes[NODES_COUNT];
 }
@@ -170,7 +176,7 @@ vec3 vec_interpolate(vec3 x, vec3 y, float v, uint mode)
 void get_samplers(uint curr_animation, uint progression_ts_us, out uint curr_sampler, out uint next_sampler)
 {
     uint avg_frame_duration_us = animations_metas[curr_animation].interpolations_avg_frame_duration.w;
-    uint samplers_length = animations[curr_animation].samplers.length();
+    uint samplers_length = animations_keys_timestamps[curr_animation].ts.length();
     curr_sampler = min(uint(progression_ts_us / avg_frame_duration_us), samplers_length - 1);
 
     if (curr_sampler + 1 >= samplers_length) {
@@ -178,6 +184,21 @@ void get_samplers(uint curr_animation, uint progression_ts_us, out uint curr_sam
     } else {
         next_sampler = curr_sampler + 1;
     }
+}
+
+vec3 anim_key_translation(uint curr_animation, uint key_idnex, uint node)
+{
+    return animations_keys[curr_animation].keys[key_idnex * NODES_COUNT + node].translation.xyz;
+}
+
+vec3 anim_key_scale(uint curr_animation, uint key_idnex, uint node)
+{
+    return animations_keys[curr_animation].keys[key_idnex * NODES_COUNT + node].scale.xyz;
+}
+
+vec4 anim_key_rotation(uint curr_animation, uint key_idnex, uint node)
+{
+    return animations_keys[curr_animation].keys[key_idnex * NODES_COUNT + node].rotation;
 }
 
 void calculate_key(uint curr_animation, uint node, uint progression_ts_us, out mat4 result)
@@ -193,29 +214,30 @@ void calculate_key(uint curr_animation, uint node, uint progression_ts_us, out m
 
     get_samplers(curr_animation, progression_ts_us, curr_sampler, next_sampler);
 
-    vec4 progression = vec4(1.0);
+    vec4 progression = vec4(0.5);
 
     if (curr_sampler != next_sampler) {
-        vec4 nom = vec4(progression_ts_s) - animations[curr_animation].samplers[curr_sampler].ts.x;
-        float denom = animations[curr_animation].samplers[next_sampler].ts.x - animations[curr_animation].samplers[curr_sampler].ts.x;
-        progression = nom / denom;
+        float curr_ts = animations_keys_timestamps[curr_animation].ts[curr_sampler].x;
+        float next_ts = animations_keys_timestamps[curr_animation].ts[next_sampler].x;
+
+        progression =  (vec4(progression_ts_s) - curr_ts) / (next_ts - curr_ts);
     }
 
     vec3 curr_translation = vec_interpolate(
-        animations[curr_animation].samplers[curr_sampler].node_keys[node].translation.xyz,
-        animations[curr_animation].samplers[next_sampler].node_keys[node].translation.xyz,
+        anim_key_translation(curr_animation, curr_sampler, node),
+        anim_key_translation(curr_animation, next_sampler, node),
         progression[ANIM_PATH_TRANSLATION],
         t_interpolation);
 
     vec3 curr_scale = vec_interpolate(
-        animations[curr_animation].samplers[curr_sampler].node_keys[node].scale.xyz,
-        animations[curr_animation].samplers[next_sampler].node_keys[node].scale.xyz,
+        anim_key_scale(curr_animation, curr_sampler, node),
+        anim_key_scale(curr_animation, next_sampler, node),
         progression[ANIM_PATH_SCALE],
         s_interpolation);
 
     vec4 curr_rotation = quat_interpolate(
-        animations[curr_animation].samplers[curr_sampler].node_keys[node].rotation,
-        animations[curr_animation].samplers[next_sampler].node_keys[node].rotation,
+        anim_key_rotation(curr_animation, curr_sampler, node),
+        anim_key_rotation(curr_animation, next_sampler, node),
         progression[ANIM_PATH_ROTATION],
         r_interpolation);
 

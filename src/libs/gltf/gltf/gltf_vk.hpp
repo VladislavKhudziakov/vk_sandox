@@ -13,12 +13,14 @@ namespace sandbox::gltf
 
     public:
         const hal::render::avk::buffer_instance& get_meta_buffer() const;
+        const hal::render::avk::buffer_instance& get_time_stamps_buffer() const;
         const hal::render::avk::buffer_instance& get_keys_buffer() const;
         const hal::render::avk::buffer_instance& get_nodes_buffer() const;
         const hal::render::avk::buffer_instance& get_exec_order_buffer() const;
 
     private:
         hal::render::avk::buffer_instance m_meta_buffer{};
+        hal::render::avk::buffer_instance m_time_stamps_buffer{};
         hal::render::avk::buffer_instance m_keys_buffer{};
         hal::render::avk::buffer_instance m_nodes_buffer{};
         hal::render::avk::buffer_instance m_exec_order_buffer{};
@@ -137,7 +139,8 @@ namespace sandbox::gltf
         struct gpu_animation
         {
             glm::ivec4 interpolation_avg_frame_duration{-1, -1, -1, 0};
-            std::vector<gpu_anim_sampler> samplers{};
+            std::vector<glm::vec4> time_stamps{};
+            std::vector<gpu_trs> keys{};
         };
 
         void create_geometry(const gltf::model& mdl, vk_model& model, hal::render::avk::buffer_pool& pool);
