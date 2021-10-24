@@ -14,9 +14,6 @@ using namespace sandbox;
 using namespace sandbox::hal;
 using namespace sandbox::hal::render;
 
-
-#include <glm/gtx/string_cast.hpp>
-
 class test_sample_app : public sandbox::sample_app
 {
 public:

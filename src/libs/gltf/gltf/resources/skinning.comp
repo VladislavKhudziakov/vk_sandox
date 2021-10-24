@@ -172,7 +172,12 @@ void get_samplers(uint curr_animation, uint progression_ts_us, out uint curr_sam
     uint avg_frame_duration_us = animations_metas[curr_animation].interpolations_avg_frame_duration.w;
     uint samplers_length = animations[curr_animation].samplers.length();
     curr_sampler = min(uint(progression_ts_us / avg_frame_duration_us), samplers_length - 1);
-    next_sampler = min(curr_sampler + 1, samplers_length - 1);
+
+    if (curr_sampler + 1 >= samplers_length) {
+        next_sampler = 0;
+    } else {
+        next_sampler = curr_sampler + 1;
+    }
 }
 
 void calculate_key(uint curr_animation, uint node, uint progression_ts_us, out mat4 result)
@@ -188,7 +193,13 @@ void calculate_key(uint curr_animation, uint node, uint progression_ts_us, out m
 
     get_samplers(curr_animation, progression_ts_us, curr_sampler, next_sampler);
 
-    vec4 progression = (vec4(progression_ts_s) - animations[curr_animation].samplers[curr_sampler].ts.x) / (animations[curr_animation].samplers[next_sampler].ts.x - animations[curr_animation].samplers[curr_sampler].ts.x);
+    vec4 progression = vec4(1.0);
+
+    if (curr_sampler != next_sampler) {
+        vec4 nom = vec4(progression_ts_s) - animations[curr_animation].samplers[curr_sampler].ts.x;
+        float denom = animations[curr_animation].samplers[next_sampler].ts.x - animations[curr_animation].samplers[curr_sampler].ts.x;
+        progression = nom / denom;
+    }
 
     vec3 curr_translation = vec_interpolate(
         animations[curr_animation].samplers[curr_sampler].node_keys[node].translation.xyz,
