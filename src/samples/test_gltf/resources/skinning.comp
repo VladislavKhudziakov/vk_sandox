@@ -14,7 +14,7 @@ const int ANIM_INTERPOLATION_STEP = 1;
 const int ANIM_PATH_CUBIC_SPLINE = 2;
 
 layout(constant_id = 0) const uint ANIMATIONS_COUNT = 1;
-layout(constant_id = 1) const uint NODES_COUNT = 5;
+layout(constant_id = 1) const uint NODES_COUNT = 22;
 layout(constant_id = 2) const uint BATCH_SIZE = 1;
 
 
@@ -46,7 +46,8 @@ animation_progression;
 layout(set = 0, binding = 1) readonly buffer animation_meta
 {
     uvec4 interpolations_avg_frame_duration[];
-}animations_meta;
+}
+animations_meta;
 
 layout(set = 0, binding = 2) readonly buffer animation_samplers
 {
@@ -68,7 +69,7 @@ in_hierarchy;
 
 layout(set = 0, binding = 5) buffer out_hierarchy_data
 {
-   mat4 nodes[NODES_COUNT];
+    mat4 nodes[NODES_COUNT];
 }
 out_hierarchy[BATCH_SIZE];
 
@@ -111,7 +112,7 @@ mat4 mat4_cast(vec4 q)
     actual_result[1].xyz = m3_result[1];
     actual_result[2].xyz = m3_result[2];
 
-    return transpose(actual_result);
+    return actual_result;
 }
 
 void translate(vec3 t, inout mat4 result)
@@ -138,9 +139,9 @@ vec4 slerp(vec4 x, vec4 y, float a)
     }
 
     if (cosTheta > 1.0f - FLT_EPSILON) {
-    return mix(x, y, a);
+        return mix(x, y, a);
     } else {
-    float theta = acos(cosTheta);
+        float theta = acos(cosTheta);
         return (sin((1.0f - a) * theta) * x + sin(a * theta) * z) / sin(theta);
     }
 }
@@ -187,9 +188,8 @@ void calculate_key(uint curr_animation, uint node, uint progression_ts_us, out m
 
     get_samplers(curr_animation, progression_ts_us, curr_sampler, next_sampler);
 
-    vec4 progression = (vec4(progression_ts_s) - animations[curr_animation].samplers[curr_sampler].ts.x) / 
-        (animations[curr_animation].samplers[next_sampler].ts.x - animations[curr_animation].samplers[curr_sampler].ts.x);
-    
+    vec4 progression = (vec4(progression_ts_s) - animations[curr_animation].samplers[curr_sampler].ts.x) / (animations[curr_animation].samplers[next_sampler].ts.x - animations[curr_animation].samplers[curr_sampler].ts.x);
+
     vec3 curr_translation = vec_interpolate(
         animations[curr_animation].samplers[curr_sampler].node_keys[node].translation.xyz,
         animations[curr_animation].samplers[next_sampler].node_keys[node].translation.xyz,
@@ -248,10 +248,20 @@ void update_hierarchy()
             uint pack_start_index = in_hierarchy.nodes_child_indices[node].y;
             uint children_count = in_hierarchy.nodes_child_indices[node].z;
 
-            for (uint node_child = 0, pack_index = pack_start_index; node_child < children_count; node_child++, pack_index = (pack_index + 1) % 4) {
-                uint child = in_hierarchy.nodes_child_indices[NODES_COUNT + children_offset + node_child][pack_index];
+            for (uint node_child = 0, pack_index = pack_start_index; node_child < children_count; node_child++, pack_index++) {
+                if (pack_index == 4) {
+                    children_offset++;
+                    pack_index = 0;
+                }
+
+                int child = in_hierarchy.nodes_child_indices[NODES_COUNT + children_offset][pack_index];
+
+                if (child < 0) {
+                    break;
+                }
+
                 out_hierarchy[mesh_instance_index].nodes[child] =
-                out_hierarchy[mesh_instance_index].nodes[node] * out_hierarchy[mesh_instance_index].nodes[child];
+                    out_hierarchy[mesh_instance_index].nodes[node] * out_hierarchy[mesh_instance_index].nodes[child];
             }
         }
     }

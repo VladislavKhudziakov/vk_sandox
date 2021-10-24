@@ -166,5 +166,5 @@ namespace sandbox::hal::render::avk
 
     vk_format_info get_format_info(VkFormat format);
 
-    VkDeviceSize get_buffer_alignment(vk::BufferUsageFlags usage, VkDeviceSize size);
+    VkDeviceSize get_buffer_offset_alignment(vk::BufferUsageFlags usage);
 } // namespace sandbox::hal::render::avk

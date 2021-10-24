@@ -1,7 +1,7 @@
 #include "resources.hpp"
 
 #include <render/vk/utils.hpp>
-#include<utils/scope_helpers.hpp>
+#include <utils/scope_helpers.hpp>
 
 using namespace sandbox::hal::render;
 
@@ -270,7 +270,7 @@ avk::pipeline_builder& avk::pipeline_builder::add_buffer(const buffer_instance& 
 avk::pipeline_builder& avk::pipeline_builder::add_buffers(const std::vector<buffer_instance>& instance_list, vk::DescriptorType type)
 {
     std::vector<vk::Buffer> vk_buffers{instance_list.size()};
-    std::transform(instance_list.begin(), instance_list.end(), vk_buffers.begin(), [](const buffer_instance& i) { return i;});
+    std::transform(instance_list.begin(), instance_list.end(), vk_buffers.begin(), [](const buffer_instance& i) { return i; });
     std::vector<std::pair<VkDeviceSize, VkDeviceSize>> size_offsets{instance_list.size()};
     std::transform(instance_list.begin(), instance_list.end(), size_offsets.begin(), [](const buffer_instance& i) { return std::make_pair<VkDeviceSize, VkDeviceSize>(i.get_offset(), i.get_size()); });
 
@@ -866,8 +866,11 @@ void avk::buffer_pool::add_buffer_instance(buffer_instance* instance)
         m_staging_size += instance->m_size;
     }
 
-    auto alignment = avk::get_buffer_alignment(instance->m_usage, instance->m_size);
-    m_size = m_size + (alignment - 1) & ~(alignment - 1);
+    auto alignment = avk::get_buffer_offset_alignment(instance->m_usage);
+
+    if (alignment != 0) {
+        m_size = m_size + (alignment - 1) & ~(alignment - 1);
+    }
 
     instance->m_buffer_offset = m_size;
     m_size += instance->m_size;
@@ -878,8 +881,7 @@ void avk::buffer_pool::add_buffer_instance(buffer_instance* instance)
         .size = instance->m_size,
         .offset = instance->m_buffer_offset,
         .staging_offset = instance->m_staging_buffer_offset,
-        .usage = instance->m_usage
-    });
+        .usage = instance->m_usage});
 
     m_usage |= instance->m_usage;
 }
@@ -928,7 +930,7 @@ vk::Buffer avk::buffer_pool::get_buffer() const
 }
 
 
-std::pair<vk::PipelineStageFlags, vk::AccessFlags> 
+std::pair<vk::PipelineStageFlags, vk::AccessFlags>
 avk::buffer_pool::get_pipeline_stages_acceses_by_usage(vk::BufferUsageFlags usage)
 {
     vk::PipelineStageFlags dst_stage{};
@@ -970,8 +972,8 @@ avk::buffer_pool::get_pipeline_stages_acceses_by_usage(vk::BufferUsageFlags usag
 
 
 void avk::buffer_pool::update_internal(
-  vk::CommandBuffer& command_buffer, 
-  uint32_t update_state)
+    vk::CommandBuffer& command_buffer,
+    uint32_t update_state)
 {
     if (update_state & UPDATE_STAGING_BUFFER_BIT) {
         if (!m_upload_callbacks.empty()) {

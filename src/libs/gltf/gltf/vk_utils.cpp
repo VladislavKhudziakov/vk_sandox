@@ -111,7 +111,7 @@ vk::Format sandbox::gltf::to_vk_format(
 void sandbox::gltf::draw_primitive(const gltf::vk_primitive& primitive, vk::CommandBuffer& command_buffer)
 {
     const auto& vert_buffer = primitive.get_vertex_buffer();
-    
+
     command_buffer.bindVertexBuffers(0, {vert_buffer}, {vert_buffer.get_offset()});
 
     if (primitive.get_indices_count() > 0) {

@@ -121,7 +121,7 @@ std::pair<const uint8_t*, gltf::component_type> sandbox::gltf::primitive::get_in
     }
 
     const auto& accessor = model.get_accessors()[m_indices];
-    
+
     return {accessor.get_data(model), accessor.get_component_type()};
 }
 
@@ -209,7 +209,7 @@ node::trs_transform node::get_transform() const
         glm::vec4 perspective;
         glm::decompose(std::get<glm::mat4>(m_transform_data), scale, rotation, translation, skew, perspective);
         return {
-            .rotation = glm::conjugate(rotation),
+            .rotation = rotation,
             .scale = scale,
             .translation = translation};
     }
@@ -651,7 +651,6 @@ const uint8_t* accessor::get_data(
 {
     return buffer_views[m_buffer_view].get_data(buffers, buffers_size) + m_byte_offset;
 }
-
 
 
 const uint8_t* sandbox::gltf::accessor::get_data(const model& model) const

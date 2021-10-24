@@ -6,6 +6,8 @@
 #include <utils/conditions_helpers.hpp>
 
 #include <map>
+#include <numeric>
+#include <algorithm>
 
 using namespace sandbox::hal::render;
 
@@ -834,8 +836,6 @@ std::pair<avk::vma_buffer, avk::vma_buffer> avk::gen_buffer(
         VmaAllocationCreateInfo{
             .usage = VMA_MEMORY_USAGE_GPU_ONLY});
 
-    spdlog::info("buffer {0:x} size {1:d}", reinterpret_cast<int64_t>(static_cast<VkBuffer>(result_buffer.as<vk::Buffer>())), buffer_size);
-
     if (on_mapped_callback) {
         command_buffer.copyBuffer(
             staging_buffer.as<vk::Buffer>(),
@@ -931,29 +931,36 @@ sandbox::hal::render::avk::vk_format_info sandbox::hal::render::avk::get_format_
 }
 
 
-VkDeviceSize sandbox::hal::render::avk::get_buffer_alignment(vk::BufferUsageFlags usage, VkDeviceSize size)
+VkDeviceSize sandbox::hal::render::avk::get_buffer_offset_alignment(vk::BufferUsageFlags usage)
 {
-    uint32_t queue_family = 0;
+    auto props = avk::context::gpu()->getProperties();
 
-    auto buffer = avk::context::device()->createBuffer(vk::BufferCreateInfo{
-        .size = size,
-        .usage = usage,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &queue_family,
-    });
+    VkDeviceSize alignment = 0;
 
-    try {
-        auto requirements = avk::context::device()->getBufferMemoryRequirements(buffer);
+    auto is_pot = [](VkDeviceSize val) {
+        return (val & (val - 1)) == 0;
+    };
 
-        if (static_cast<bool>(buffer)) {
-            avk::context::device()->destroyBuffer(buffer);
+    auto align = [&alignment, &is_pot](VkDeviceSize a) {
+        if (alignment == 0) {
+            alignment = a;
+        } else {
+            ASSERT(is_pot(alignment) && is_pot(a));
+            alignment = std::max(alignment, a);
         }
+    };
 
-        return requirements.alignment;
-    } catch (...) {
-        if (static_cast<bool>(buffer)) {
-            avk::context::device()->destroyBuffer(buffer);
-        }
+    if (usage & vk::BufferUsageFlagBits::eUniformBuffer) {
+        align(props.limits.minUniformBufferOffsetAlignment);
     }
+
+    if (usage & vk::BufferUsageFlagBits::eStorageBuffer) {
+        align(props.limits.minStorageBufferOffsetAlignment);
+    }
+
+    if (usage & vk::BufferUsageFlagBits::eStorageTexelBuffer) {
+        align(props.limits.minTexelBufferOffsetAlignment);
+    }
+
+    return alignment;
 }

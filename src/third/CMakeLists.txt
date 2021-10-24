@@ -7,3 +7,5 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/VulkanMemoryAllocator)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/stb)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/json)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/renderdoc)
+
+target_compile_definitions(spdlog PUBLIC "-DNOMINMAX")

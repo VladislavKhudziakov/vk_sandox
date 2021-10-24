@@ -3,7 +3,7 @@
 #include <render/vk/raii.hpp>
 #include <utils/conditions_helpers.hpp>
 
-#include<unordered_set>
+#include <unordered_set>
 
 namespace sandbox::hal::render::avk
 {
@@ -103,7 +103,7 @@ namespace sandbox::hal::render::avk
         uint32_t m_subresource_index{};
 
         buffer_pool* m_pool{nullptr};
-        
+
         size_t m_size{};
         size_t m_buffer_offset{};
         size_t m_staging_buffer_offset{size_t(-1)};
@@ -171,11 +171,11 @@ namespace sandbox::hal::render::avk
             const std::vector<std::pair<vk::ShaderModule, vk::ShaderStageFlagBits>>& stages_list);
 
         pipeline_builder& set_vertex_format(
-          std::tuple<
-          const vk::VertexInputAttributeDescription*, 
-          uint32_t, 
-          const vk::VertexInputBindingDescription*, 
-          uint32_t>);
+            std::tuple<
+                const vk::VertexInputAttributeDescription*,
+                uint32_t,
+                const vk::VertexInputBindingDescription*,
+                uint32_t>);
 
         pipeline_builder& set_vertex_format(
             const std::vector<vk::VertexInputAttributeDescription>& attrs,
@@ -198,8 +198,8 @@ namespace sandbox::hal::render::avk
         pipeline_builder& add_buffer(const buffer_instance&, vk::DescriptorType type);
 
         pipeline_builder& add_buffers(
-          const std::vector<buffer_instance>&,
-          vk::DescriptorType type);
+            const std::vector<buffer_instance>&,
+            vk::DescriptorType type);
 
         pipeline_builder& add_texture(vk::ImageView, vk::Sampler);
         pipeline_builder& add_textures(const std::vector<vk::ImageView>&, const std::vector<vk::Sampler>&);
@@ -411,12 +411,12 @@ namespace sandbox::hal::render::avk
 
         void update_internal(vk::CommandBuffer& command_buffer, uint32_t update_state);
         void upload_staging_data(uint8_t* dst);
-         
+
         uint32_t m_queue_family{};
 
         size_t m_size{};
         size_t m_staging_size{};
-        std::vector <std::function<void(uint8_t*)>> m_upload_callbacks{};
+        std::vector<std::function<void(uint8_t*)>> m_upload_callbacks{};
         std::vector<buffer_subresource> m_subresources{};
         std::unordered_set<uint32_t> m_subresources_to_update{};
 
@@ -424,5 +424,5 @@ namespace sandbox::hal::render::avk
         avk::vma_buffer m_resource{};
         avk::vma_buffer m_staging_buffer{};
     };
-    
+
 } // namespace sandbox::hal::render::avk
