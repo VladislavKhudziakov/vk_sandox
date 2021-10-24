@@ -774,36 +774,52 @@ void animation_instance::update(uint64_t dt)
         return;
     }
 
-    const auto& curr_anim = m_model.get_animations()[m_current_animation];
     m_curr_position += dt;
-    if (m_curr_position >= m_end_position) {
-        if (m_looped) {
-            m_curr_position = m_start_position;
-        } else {
-            m_curr_position = m_end_position;
-        }
-    }
+
+    m_curr_position = m_start_position + (m_curr_position % (m_end_position - m_start_position));
 }
 
 
 animation_instance::animation_instance(const model& model)
     : m_model(model)
 {
+    set_animation(0);
 }
 
 
-void animation_instance::play(uint32_t animation_index, uint64_t start_position_us, uint64_t end_position_us, bool looped)
+void animation_instance::play()
 {
-    const auto& curr_anim = m_model.get_animations()[m_current_animation];
-    uint64_t anim_duration_us = curr_anim.get_duration() * 1e6;
-
-    m_current_animation = animation_index;
-    m_start_position = std::max(start_position_us, anim_duration_us);
-    m_curr_position = m_start_position;
-    m_end_position = std::max(anim_duration_us, end_position_us);
-    m_looped = looped;
-
     m_playback_state = playback_state::playing;
+}
+
+
+void sandbox::gltf::animation_instance::set_current_position(uint64_t curr_pos_us)
+{
+    m_curr_position = std::clamp(curr_pos_us, m_start_position, m_end_position);
+}
+
+
+void sandbox::gltf::animation_instance::set_start_positon(uint64_t start_pos_us)
+{
+    const auto& current_animation = m_model.get_animations()[m_current_animation];
+    const uint64_t duration_us = current_animation.get_duration() * 1e6;
+    m_start_position = std::min(start_pos_us, duration_us);
+    set_current_position(m_start_position);
+}
+
+
+void sandbox::gltf::animation_instance::set_end_positon(uint64_t end_pos_us)
+{
+    const uint64_t duration_us = m_model.get_animations()[m_current_animation].get_duration() * 1e6;
+    m_end_position = std::min(end_pos_us, duration_us);
+}
+
+
+void sandbox::gltf::animation_instance::set_animation(uint64_t animation_index)
+{
+    m_current_animation = animation_index;
+    set_end_positon(-1);
+    set_start_positon(0);
 }
 
 
@@ -816,6 +832,7 @@ void animation_instance::pause()
 void animation_instance::stop()
 {
     m_playback_state = playback_state::paused;
+    set_current_position(m_start_position);
 }
 
 
@@ -829,6 +846,7 @@ const std::vector<vk_mesh>& vk_model::get_meshes() const
 {
     return m_meshes;
 }
+
 
 const std::vector<vk_animation>& sandbox::gltf::vk_model::get_animations() const
 {
@@ -925,4 +943,141 @@ const hal::render::avk::buffer_instance& sandbox::gltf::vk_animation::get_nodes_
 const hal::render::avk::buffer_instance& sandbox::gltf::vk_animation::get_exec_order_buffer() const
 {
     return m_exec_order_buffer;
+}
+
+
+sandbox::gltf::animation_controller::animation_controller(
+    const gltf::model& gltf_model,
+    const gltf::vk_model& vk_model)
+    : m_gltf_model(&gltf_model)
+    , m_vk_model(&vk_model)
+{
+}
+
+
+void sandbox::gltf::animation_controller::init_resources(hal::render::avk::buffer_pool& pool, size_t instances_count)
+{
+    ASSERT(m_gltf_model != nullptr && m_vk_model != nullptr);
+
+    m_batch_size = instances_count + 64 - (instances_count % 64);
+
+    m_progressions.reserve(m_batch_size);
+    m_hierarchies.reserve(m_batch_size);
+
+    for (uint32_t i = 0; i < m_batch_size; i++) {
+        auto prog_buffer = pool
+                               .get_builder()
+                               .set_size(sizeof(glm::uvec4))
+                               .set_usage(vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer)
+                               .create([i](uint8_t* dst) {
+                                   glm::uvec4 v{0, 0, i, 0};
+                                   std::memcpy(dst, glm::value_ptr(v), sizeof(v));
+                               });
+
+        auto h_buffer = pool
+                            .get_builder()
+                            .set_size(m_gltf_model->get_nodes().size() * sizeof(glm::mat4))
+                            .set_usage(vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer)
+                            .create();
+
+        m_progressions.emplace_back(prog_buffer);
+        m_hierarchies.emplace_back(h_buffer);
+    }
+
+    m_animation_instances.reserve(m_batch_size);
+}
+
+
+void sandbox::gltf::animation_controller::init_pipelines()
+{
+    ASSERT(m_gltf_model != nullptr && m_vk_model != nullptr);
+
+    sandbox::hal::filesystem::common_file file{};
+    file.open(WORK_DIR "/gltf/resources/skinning.comp.spv");
+    ASSERT(file.get_size());
+
+    m_shader = avk::create_shader_module(avk::context::device()->createShaderModule(vk::ShaderModuleCreateInfo{
+        .flags = {},
+        .codeSize = file.get_size(),
+        .pCode = reinterpret_cast<const uint32_t*>(file.read_all().get_data())}));
+
+    std::vector<avk::buffer_instance> meta_buffers{};
+    meta_buffers.reserve(m_vk_model->get_animations().size());
+    std::vector<avk::buffer_instance> keys_buffers{};
+    keys_buffers.reserve(m_vk_model->get_animations().size());
+    std::vector<avk::buffer_instance> exec_order_buffers{};
+    exec_order_buffers.reserve(m_vk_model->get_animations().size());
+    std::vector<avk::buffer_instance> nodes_buffers{};
+    nodes_buffers.reserve(m_vk_model->get_animations().size());
+
+    for (const auto& anim : m_vk_model->get_animations()) {
+        meta_buffers.emplace_back(anim.get_meta_buffer());
+        keys_buffers.emplace_back(anim.get_keys_buffer());
+        exec_order_buffers.emplace_back(anim.get_exec_order_buffer());
+        nodes_buffers.emplace_back(anim.get_nodes_buffer());
+    }
+
+    // clang-format off
+    m_pipeline = avk::pipeline_builder().set_shader_stages({{m_shader, vk::ShaderStageFlagBits::eCompute}})
+      .add_specialization_constant<uint32_t>(m_gltf_model->get_animations().size())
+      .add_specialization_constant<uint32_t>(m_gltf_model->get_nodes().size())
+      .add_specialization_constant<uint32_t>(m_batch_size)
+      .begin_descriptor_set()
+      .add_buffers(m_progressions, vk::DescriptorType::eStorageBuffer)
+      .add_buffers(meta_buffers, vk::DescriptorType::eStorageBuffer)
+      .add_buffers(keys_buffers, vk::DescriptorType::eStorageBuffer)
+      .add_buffers(exec_order_buffers, vk::DescriptorType::eStorageBuffer)
+      .add_buffers(nodes_buffers, vk::DescriptorType::eStorageBuffer)
+      .add_buffers(m_hierarchies, vk::DescriptorType::eStorageBuffer)
+      .create_compute_pipeline();
+    // clang-format on
+}
+
+
+void sandbox::gltf::animation_controller::update(uint64_t dt)
+{
+    for (size_t i = 0; i < m_animation_instances.size(); i++) {
+        auto& anim_instance = m_animation_instances[i];
+        anim_instance.update(dt);
+
+        m_progressions[i].upload([i, curr_anim = anim_instance.m_current_animation, curr_pos = anim_instance.m_curr_position](uint8_t* dst) {
+            glm::uvec4 v{curr_anim, curr_pos, i, 0};
+            std::memcpy(dst, glm::value_ptr(v), sizeof(v));
+        });
+    }
+}
+
+
+void sandbox::gltf::animation_controller::update(vk::CommandBuffer& command_buffer)
+{
+    m_pipeline.activate(command_buffer);
+    command_buffer.dispatch(m_batch_size, 1, 1);
+
+    command_buffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eVertexShader,
+        {},
+        {vk::MemoryBarrier{
+            .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
+            .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+        }},
+        {},
+        {});
+}
+
+
+const std::vector<hal::render::avk::buffer_instance>& sandbox::gltf::animation_controller::get_hierarchies() const
+{
+    return m_hierarchies;
+}
+
+
+const std::vector<hal::render::avk::buffer_instance>& sandbox::gltf::animation_controller::get_progressions() const
+{
+    return m_progressions;
+}
+
+animation_instance* sandbox::gltf::animation_controller::instantiate_animation()
+{
+    return &m_animation_instances.emplace_back(*m_gltf_model);
 }

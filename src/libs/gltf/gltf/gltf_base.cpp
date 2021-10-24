@@ -855,9 +855,21 @@ uint64_t animation_sampler::get_input() const
 }
 
 
+const accessor& sandbox::gltf::animation_sampler::get_input(const gltf::model& model) const
+{
+    return model.get_accessors()[get_input()];
+}
+
+
 uint64_t animation_sampler::get_output() const
 {
     return m_output;
+}
+
+
+const accessor& sandbox::gltf::animation_sampler::get_output(const gltf::model& model) const
+{
+    return model.get_accessors()[get_output()];
 }
 
 

@@ -39,15 +39,15 @@ struct in_node
 
 layout(set = 0, binding = 0) readonly buffer anim_progression_data
 {
-    uvec4 progression[];
+    uvec4 progression;
 }
-animation_progression;
+animation_progression[BATCH_SIZE];
 
 layout(set = 0, binding = 1) readonly buffer animation_meta
 {
-    uvec4 interpolations_avg_frame_duration[];
+    uvec4 interpolations_avg_frame_duration;
 }
-animations_meta;
+animations_metas[ANIMATIONS_COUNT];
 
 layout(set = 0, binding = 2) readonly buffer animation_samplers
 {
@@ -59,13 +59,13 @@ layout(set = 0, binding = 3) readonly buffer in_execution_order_data
 {
     ivec4 indices[];
 }
-execution_order;
+execution_orders[ANIMATIONS_COUNT];
 
 layout(set = 0, binding = 4) readonly buffer in_hierarchy_data
 {
     ivec4 nodes_child_indices[];
 }
-in_hierarchy;
+in_hierarchies[ANIMATIONS_COUNT];
 
 layout(set = 0, binding = 5) buffer out_hierarchy_data
 {
@@ -138,7 +138,7 @@ vec4 slerp(vec4 x, vec4 y, float a)
         cosTheta = -cosTheta;
     }
 
-    if (cosTheta > 1.0f - FLT_EPSILON) {
+    if (cosTheta >= 1.0f - FLT_EPSILON) {
         return mix(x, y, a);
     } else {
         float theta = acos(cosTheta);
@@ -169,7 +169,7 @@ vec3 vec_interpolate(vec3 x, vec3 y, float v, uint mode)
 
 void get_samplers(uint curr_animation, uint progression_ts_us, out uint curr_sampler, out uint next_sampler)
 {
-    uint avg_frame_duration_us = animations_meta.interpolations_avg_frame_duration[curr_animation].w;
+    uint avg_frame_duration_us = animations_metas[curr_animation].interpolations_avg_frame_duration.w;
     uint samplers_length = animations[curr_animation].samplers.length();
     curr_sampler = min(uint(progression_ts_us / avg_frame_duration_us), samplers_length - 1);
     next_sampler = min(curr_sampler + 1, samplers_length - 1);
@@ -177,9 +177,9 @@ void get_samplers(uint curr_animation, uint progression_ts_us, out uint curr_sam
 
 void calculate_key(uint curr_animation, uint node, uint progression_ts_us, out mat4 result)
 {
-    uint t_interpolation = max(animations_meta.interpolations_avg_frame_duration[curr_animation][ANIM_PATH_TRANSLATION], 0);
-    uint r_interpolation = max(animations_meta.interpolations_avg_frame_duration[curr_animation][ANIM_PATH_ROTATION], 0);
-    uint s_interpolation = max(animations_meta.interpolations_avg_frame_duration[curr_animation][ANIM_PATH_SCALE], 0);
+    uint t_interpolation = max(animations_metas[curr_animation].interpolations_avg_frame_duration[ANIM_PATH_TRANSLATION], 0);
+    uint r_interpolation = max(animations_metas[curr_animation].interpolations_avg_frame_duration[ANIM_PATH_ROTATION], 0);
+    uint s_interpolation = max(animations_metas[curr_animation].interpolations_avg_frame_duration[ANIM_PATH_SCALE], 0);
 
     float progression_ts_s = float(progression_ts_us) / 1e6;
 
@@ -216,7 +216,7 @@ void calculate_key(uint curr_animation, uint node, uint progression_ts_us, out m
 
 void calculcate_local_keys()
 {
-    uvec4 curr_progression = animation_progression.progression[gl_GlobalInvocationID.x];
+    uvec4 curr_progression = animation_progression[gl_GlobalInvocationID.x].progression;
 
     uint curr_animation = curr_progression.x;
     uint curr_time_us = curr_progression.y;
@@ -230,23 +230,26 @@ void calculcate_local_keys()
 void update_hierarchy()
 {
     // x - start_index, y - start_offset,  z - count
-    uvec4 curr_progression = animation_progression.progression[gl_GlobalInvocationID.x];
+    uvec4 curr_progression = animation_progression[gl_GlobalInvocationID.x].progression;
+
+    uint curr_animation = curr_progression.x;
+    uint curr_time_us = curr_progression.y;
     uint mesh_instance_index = curr_progression.z;
 
     bool interrupt = false;
 
-    for (uint i = 0; i < execution_order.indices.length() && !interrupt; ++i) {
+    for (uint i = 0; i < execution_orders[curr_animation].indices.length() && !interrupt; ++i) {
         for (uint j = 0; j < 4; ++j) {
-            int node = execution_order.indices[i][j];
+            int node = execution_orders[curr_animation].indices[i][j];
 
             if (node < 0) {
                 interrupt = true;
                 break;
             }
 
-            uint children_offset = in_hierarchy.nodes_child_indices[node].x;
-            uint pack_start_index = in_hierarchy.nodes_child_indices[node].y;
-            uint children_count = in_hierarchy.nodes_child_indices[node].z;
+            uint children_offset = in_hierarchies[curr_animation].nodes_child_indices[node].x;
+            uint pack_start_index = in_hierarchies[curr_animation].nodes_child_indices[node].y;
+            uint children_count = in_hierarchies[curr_animation].nodes_child_indices[node].z;
 
             for (uint node_child = 0, pack_index = pack_start_index; node_child < children_count; node_child++, pack_index++) {
                 if (pack_index == 4) {
@@ -254,7 +257,7 @@ void update_hierarchy()
                     pack_index = 0;
                 }
 
-                int child = in_hierarchy.nodes_child_indices[NODES_COUNT + children_offset][pack_index];
+                int child = in_hierarchies[curr_animation].nodes_child_indices[NODES_COUNT + children_offset][pack_index];
 
                 if (child < 0) {
                     break;
@@ -269,7 +272,7 @@ void update_hierarchy()
 
 void main()
 {
-    if (gl_GlobalInvocationID.x >= animation_progression.progression.length()) {
+    if (gl_GlobalInvocationID.x >= BATCH_SIZE) {
         return;
     }
     calculcate_local_keys();

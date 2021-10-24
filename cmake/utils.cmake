@@ -56,7 +56,7 @@ function (make_bin)
         target_link_libraries(${NEW_APP_NAME} PRIVATE ${NEW_APP_DEPENDS})
     endif()
 
-    target_compile_definitions(${NEW_APP_NAME} PRIVATE -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+    target_compile_definitions(${NEW_APP_NAME} PRIVATE -DWORK_DIR="${CMAKE_CURRENT_LIST_DIR}")
 
     if (WIN32)
         set(GLSL_VALIDATOR $ENV{VULKAN_SDK}/Bin/glslangValidator.exe)
@@ -67,7 +67,7 @@ function (make_bin)
 
     foreach(GLSL ${NEW_APP_SHADERS})
         file(RELATIVE_PATH REL_GLSL_PATH ${CMAKE_CURRENT_LIST_DIR} ${GLSL})
-        set(SPIRV "${CMAKE_CURRENT_BINARY_DIR}/${REL_GLSL_PATH}.spv")
+        set(SPIRV "${CMAKE_CURRENT_LIST_DIR}/${REL_GLSL_PATH}.spv")
         get_filename_component(SPIRV_DIR ${SPIRV} DIRECTORY)
         get_filename_component(GLSL_FILE ${GLSL} NAME)
         add_custom_command(

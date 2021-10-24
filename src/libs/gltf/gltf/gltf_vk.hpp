@@ -178,7 +178,7 @@ namespace sandbox::gltf
 
     class animation_instance
     {
-        friend class gpu_animation_controller;
+        friend class animation_controller;
 
         enum class playback_state
         {
@@ -189,13 +189,20 @@ namespace sandbox::gltf
     public:
         explicit animation_instance(const gltf::model& model);
 
-        void update(uint64_t dt);
-        void play(uint32_t animation_index, uint64_t start_position_us = 0, uint64_t end_position_us = -1, bool looped = false);
-        void resume();
+        void set_animation(uint64_t uint32_t);
+
+        void set_start_positon(uint64_t pos_us);
+        void set_end_positon(uint64_t pos_us);
+        void set_current_position(uint64_t pos_us);
+
+        void play();
         void pause();
+        void resume();
         void stop();
 
     private:
+        void update(uint64_t dt);
+
         const gltf::model& m_model;
 
         uint64_t m_start_position{0};
@@ -204,8 +211,41 @@ namespace sandbox::gltf
         uint32_t m_current_animation{0};
 
         playback_state m_playback_state{playback_state::paused};
+    };
 
-        bool m_looped{false};
+
+    class animation_controller
+    {
+    public:
+        animation_controller() = default;
+
+        animation_controller(
+            const gltf::model& gltf_model,
+            const gltf::vk_model& vk_model);
+
+        void init_resources(hal::render::avk::buffer_pool& pool, size_t instances_count);
+        void init_pipelines();
+
+        void update(uint64_t dt);
+        void update(vk::CommandBuffer& command_buffer);
+
+        const std::vector<hal::render::avk::buffer_instance>& get_hierarchies() const;
+        const std::vector<hal::render::avk::buffer_instance>& get_progressions() const;
+
+        animation_instance* instantiate_animation();
+
+    private:
+        const gltf::model* m_gltf_model{nullptr};
+        const gltf::vk_model* m_vk_model{nullptr};
+
+        size_t m_batch_size{};
+
+        hal::render::avk::pipeline_instance m_pipeline{};
+        hal::render::avk::shader_module m_shader{};
+
+        std::vector<hal::render::avk::buffer_instance> m_hierarchies{};
+        std::vector<hal::render::avk::buffer_instance> m_progressions{};
+        std::vector<animation_instance> m_animation_instances{};
     };
 
 

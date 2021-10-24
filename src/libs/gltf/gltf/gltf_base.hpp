@@ -270,8 +270,11 @@ namespace sandbox::gltf
         explicit animation_sampler(const nlohmann::json& animation_sampler_json);
 
         animation_interpolation get_interpolation() const;
+
         uint64_t get_input() const;
+        const accessor& get_input(const gltf::model& model) const;
         uint64_t get_output() const;
+        const accessor& get_output(const gltf::model& model) const;
 
     private:
         animation_interpolation_value m_interpolation{};
