@@ -321,14 +321,14 @@ material::material(const nlohmann::json& material_json)
         pbr.metallic_roughness_texture = extract_json_data<texture_data, false>(
             pbr_metallic_roughness_json, "metallicRoughnessTexture", pbr.metallic_roughness_texture, extract_texture_data);
     });
-    
+
     m_normal_texture = extract_json_data<texture_data, false>(
         material_json, "normalTexture", m_normal_texture, extract_texture_data);
 
-   do_if_found(material_json, "normalTexture", [this](const json& normal_json) {
+    do_if_found(material_json, "normalTexture", [this](const json& normal_json) {
         do_if_found(normal_json, "scale", [this](const json& scale_json) {
             m_normal_scale = scale_json.get<float>();
-        }); 
+        });
     });
 
     m_occlusion_texture = extract_json_data<texture_data, false>(

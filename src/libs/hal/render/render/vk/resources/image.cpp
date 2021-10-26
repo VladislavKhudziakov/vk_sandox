@@ -196,7 +196,6 @@ void avk::image_pool::add_image_instance(image_instance& instance, bool gen_mips
     };
 
     if (reserve_staging_space) {
-        
         m_staging_buffer_size = get_aligned_size(m_staging_buffer_size, get_format_info(instance.m_format).size);
 
         subresource.m_staging_offset = m_staging_buffer_size;
@@ -384,7 +383,7 @@ void avk::image_pool::copy_subres_level(
         subres.m_image.as<vk::Image>(),
         vk::ImageLayout::eTransferDstOptimal,
         {copy_data});
-    
+
     level_offset += get_subresource_level_size(subres, level);
 }
 
@@ -510,8 +509,7 @@ void avk::image_pool::image_pipeline_barrier(
     vk::ImageLayout old_layout,
     vk::ImageLayout new_layout)
 {
-    vk::ImageMemoryBarrier barrier
-    {
+    vk::ImageMemoryBarrier barrier{
         .srcAccessMask = src_access,
         .dstAccessMask = dst_access,
 

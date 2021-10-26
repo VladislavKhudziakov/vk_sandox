@@ -198,39 +198,37 @@ private:
     void init_pipelines()
     {
         if (!m_vertex_shader) {
-            create_shader(m_vertex_shader, WORK_DIR"/resources/test.vert.spv");
+            create_shader(m_vertex_shader, WORK_DIR "/resources/test.vert.spv");
         }
 
         if (!m_fragment_shader) {
-            create_shader(m_fragment_shader, WORK_DIR"/resources/test.frag.spv");
+            create_shader(m_fragment_shader, WORK_DIR "/resources/test.frag.spv");
         }
 
         m_animation_controller.init_pipelines();
 
-        for (const auto& vk_mesh : m_geometry.get_meshes()) {
-            const auto& materials = m_model.get_materials();
-
-            const auto& vk_primitives = vk_mesh.get_primitives();
-            auto curr_vk_primitive = vk_primitives.begin();
+        for (const auto& mesh : m_geometry.get_meshes()) {
+            const auto& primitives = mesh.get_primitives();
+            auto curr_primitive = primitives.begin();
 
             int mesh_id = 0;
-            for (const auto& primitive : vk_mesh.get_primitives()) {
+            for (const auto& primitive : mesh.get_primitives()) {
                 avk::pipeline_builder builder{};
 
-                const auto& mat = curr_vk_primitive->get_material(m_geometry);
+                const auto& mat = curr_primitive->get_material(m_geometry);
 
                 builder.set_vertex_format(m_geometry.get_vertex_format())
                     .set_shader_stages({{m_vertex_shader, vk::ShaderStageFlagBits::eVertex}, {m_fragment_shader, vk::ShaderStageFlagBits::eFragment}})
                     .add_blend_state()
                     .add_push_constant(vk::ShaderStageFlagBits::eVertex, uint32_t(0))
                     .add_specialization_constant(uint32_t(1))                                       // use hierarchy
-                    .add_specialization_constant(uint32_t(vk_mesh.is_skinned()))                    // use skin
-                    .add_specialization_constant(uint32_t(vk_mesh.get_skin().get_hierarchy_size())) // hierarchy size
-                    .add_specialization_constant(uint32_t(vk_mesh.get_skin().get_joints_count()))   // skin size
+                    .add_specialization_constant(uint32_t(mesh.is_skinned()))                       // use skin
+                    .add_specialization_constant(uint32_t(mesh.get_skin().get_hierarchy_size()))  // hierarchy size
+                    .add_specialization_constant(uint32_t(mesh.get_skin().get_joints_count()))   // skin size
                     .begin_descriptor_set()
                     .add_buffer(m_uniform_buffer, vk::DescriptorType::eUniformBuffer)
                     .add_buffer(m_animation_controller.get_hierarchies().front(), vk::DescriptorType::eStorageBuffer)
-                    .add_buffer(vk_mesh.get_skin().get_joints_buffer(), vk::DescriptorType::eUniformBuffer)
+                    .add_buffer(mesh.get_skin().get_joints_buffer(), vk::DescriptorType::eUniformBuffer)
                     .finish_descriptor_set()
                     .begin_descriptor_set()
                     .add_texture(mat.get_base_color(m_geometry).get_image(), mat.get_base_color(m_geometry).get_sampler())
@@ -240,7 +238,7 @@ private:
                     .add_texture(mat.get_emissive(m_geometry).get_image(), mat.get_emissive(m_geometry).get_sampler())
                     .finish_descriptor_set();
                 m_models_primitives_pipelines[mesh_id].emplace_back(builder.create_graphics_pipeline(m_pass.get_native_pass(), 0));
-                curr_vk_primitive++;
+                curr_primitive++;
             }
         }
     }

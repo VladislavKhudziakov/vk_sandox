@@ -22,7 +22,7 @@ avk::sampler_builder& avk::sampler_builder::set_filtering(vk::Filter mag, vk::Fi
 
 
 avk::sampler_builder& avk::sampler_builder::set_wrap(vk::SamplerAddressMode u, vk::SamplerAddressMode v, vk::SamplerAddressMode w)
-{ 
+{
     m_wrap_u = u;
     m_wrap_v = v;
     m_wrap_w = w;
@@ -53,7 +53,7 @@ avk::sampler_instance sandbox::hal::render::avk::sampler_builder::create(const i
     sampler_instance result{};
 
     auto limits = avk::context::gpu()->getProperties().limits;
-    
+
     vk::SamplerCreateInfo sampler_info{
         .magFilter = m_min_filter,
         .minFilter = m_mag_filter,
@@ -66,7 +66,7 @@ avk::sampler_instance sandbox::hal::render::avk::sampler_builder::create(const i
 
         .anisotropyEnable = m_anizatropy <= 1.0,
         .maxAnisotropy = std::clamp(m_anizatropy, 1.0f, limits.maxSamplerAnisotropy),
-        
+
         .compareEnable = m_comapre_enabled,
         .compareOp = m_compare_op,
 
@@ -74,8 +74,7 @@ avk::sampler_instance sandbox::hal::render::avk::sampler_builder::create(const i
         .maxLod = static_cast<float>(image.get_mips_levels() - 1),
 
         .borderColor = vk::BorderColor::eFloatOpaqueBlack,
-        .unnormalizedCoordinates = VK_FALSE
-    };
+        .unnormalizedCoordinates = VK_FALSE};
 
     result.m_sampler = avk::create_sampler(avk::context::device()->createSampler(sampler_info));
 

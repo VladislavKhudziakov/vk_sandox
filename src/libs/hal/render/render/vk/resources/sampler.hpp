@@ -9,6 +9,7 @@ namespace sandbox::hal::render::avk
     class sampler_instance
     {
         friend class sampler_builder;
+
     public:
         sampler_instance() = default;
         operator vk::Sampler() const;
@@ -37,7 +38,7 @@ namespace sandbox::hal::render::avk
         vk::SamplerAddressMode m_wrap_v{vk::SamplerAddressMode::eClampToEdge};
         vk::SamplerAddressMode m_wrap_w{vk::SamplerAddressMode::eClampToEdge};
 
-        
+
         float m_anizatropy{1.0};
 
         bool m_comapre_enabled{false};

@@ -137,6 +137,14 @@ namespace
 } // namespace
 
 
+vk_model sandbox::gltf::vk_model_builder::load_from_file(
+  const std::string& path, 
+  hal::render::avk::buffer_pool& buffer_pool, 
+  hal::render::avk::image_pool& image_pool)
+{
+    return vk_model();
+}
+
 vk_model_builder& vk_model_builder::set_vertex_format(
     const std::array<vk::Format, 8>& fmt)
 {
@@ -153,8 +161,8 @@ vk_model_builder& vk_model_builder::use_skin(bool use_skin)
 
 
 vk_model vk_model_builder::create(
-    const model& mdl, 
-    avk::buffer_pool& buffer_pool, 
+    const model& mdl,
+    avk::buffer_pool& buffer_pool,
     hal::render::avk::image_pool& image_pool)
 {
     vk_model result;
@@ -669,13 +677,13 @@ void vk_model_builder::create_textures(
         auto image_pixels = get_stb_pixel_data(mdl, image);
 
         images.emplace_back(pool.get_builder()
-            .set_width(image_pixels.width)
-            .set_height(image_pixels.height)
-            .set_format(image_pixels.format)
-            .gen_mips(true)
-            .create([pixels = std::move(image_pixels.pixels)](uint8_t* dst) {
-                std::memcpy(dst, pixels.data(), pixels.size());
-            }));
+                                .set_width(image_pixels.width)
+                                .set_height(image_pixels.height)
+                                .set_format(image_pixels.format)
+                                .gen_mips(true)
+                                .create([pixels = std::move(image_pixels.pixels)](uint8_t* dst) {
+                                    std::memcpy(dst, pixels.data(), pixels.size());
+                                }));
     }
 
     result.m_textures.reserve(mdl.get_textures().size());
@@ -685,17 +693,17 @@ void vk_model_builder::create_textures(
 
         new_texture.m_image = images[texture.get_image()];
         const auto& sampler = mdl.get_samplers()[texture.get_sampler()];
-        
+
         new_texture.m_sampler = avk::sampler_builder()
-            .set_filtering(
-                to_vk_sampler_filter(sampler.get_mag_filter()).first,
-                to_vk_sampler_filter(sampler.get_mag_filter()).first,
-                vk::SamplerMipmapMode::eLinear)
-            .set_wrap(
-                to_vk_sampler_wrap(sampler.get_wrap_s()),
-                to_vk_sampler_wrap(sampler.get_wrap_t()),
-                to_vk_sampler_wrap(sampler.get_wrap_s()))
-            .create(new_texture.m_image);
+                                    .set_filtering(
+                                        to_vk_sampler_filter(sampler.get_mag_filter()).first,
+                                        to_vk_sampler_filter(sampler.get_mag_filter()).first,
+                                        vk::SamplerMipmapMode::eLinear)
+                                    .set_wrap(
+                                        to_vk_sampler_wrap(sampler.get_wrap_s()),
+                                        to_vk_sampler_wrap(sampler.get_wrap_t()),
+                                        to_vk_sampler_wrap(sampler.get_wrap_s()))
+                                    .create(new_texture.m_image);
     }
 }
 
@@ -775,8 +783,7 @@ void vk_model_builder::create_materials(
             .metalic_roughness_texture_data = {data.metallic_roughness_texture.coord_set, 1, max_scale, 0},
             .normal_texture_data{material.get_normal_texture().coord_set, use_normal, material.get_normal_scale() * max_scale, 1},
             .occlusion_texture_data = {material.get_occlusion_texture().coord_set, use_occl, max_scale, 0},
-            .emissive_texture_data = {material.get_emissive_texture().coord_set, use_emi, max_scale, 0}
-        };
+            .emissive_texture_data = {material.get_emissive_texture().coord_set, use_emi, max_scale, 0}};
 
         // clang-format off
         new_material.m_material_info_buffer = buffer_pool.get_builder()
@@ -792,11 +799,11 @@ void vk_model_builder::create_materials(
 
 vk_model_builder::stb_pixel_data vk_model_builder::get_stb_pixel_data(const gltf::model& mdl, const gltf::image& image)
 {
-    stb_pixel_data result {};
+    stb_pixel_data result{};
 
     const auto& buffers = mdl.get_buffers();
     const auto& buffer_views = mdl.get_buffer_views();
-    
+
     std::unique_ptr<void, std::function<void(void*)>> handler{nullptr, [](void* data) {if (data) stbi_image_free(data); }};
     int w, h, c;
 
@@ -842,7 +849,7 @@ vk_model_builder::stb_pixel_data vk_model_builder::get_stb_pixel_data(const gltf
             }
         }
     }
-    
+
     result.width = w;
     result.height = h;
 
@@ -852,10 +859,10 @@ vk_model_builder::stb_pixel_data vk_model_builder::get_stb_pixel_data(const gltf
 
 uint32_t vk_model_builder::gen_texture_from_vec(
     glm::vec4 glm_data,
-    std::vector<vk_texture_>& textures,
+    std::vector<vk_texture>& textures,
     hal::render::avk::image_pool& pool)
 {
-    vk_texture_ result;
+    vk_texture result;
 
     // clang-format off
             result.m_image = pool.get_builder()
@@ -969,7 +976,7 @@ const std::vector<vk_material>& sandbox::gltf::vk_model::get_materials() const
 }
 
 
-const std::vector<vk_texture_>& sandbox::gltf::vk_model::get_textures() const
+const std::vector<vk_texture>& sandbox::gltf::vk_model::get_textures() const
 {
     return m_textures;
 }
@@ -1224,43 +1231,43 @@ animation_instance* sandbox::gltf::animation_controller::instantiate_animation()
 }
 
 
-const vk_texture_& sandbox::gltf::vk_material::get_base_color(const vk_model& model) const
+const vk_texture& sandbox::gltf::vk_material::get_base_color(const vk_model& model) const
 {
     return model.get_textures()[m_base_color];
 }
 
 
-const vk_texture_& sandbox::gltf::vk_material::get_normal(const vk_model& model) const
+const vk_texture& sandbox::gltf::vk_material::get_normal(const vk_model& model) const
 {
     return model.get_textures()[m_normal];
 }
 
 
-const vk_texture_& sandbox::gltf::vk_material::get_metallic_roughness(const vk_model& model) const
+const vk_texture& sandbox::gltf::vk_material::get_metallic_roughness(const vk_model& model) const
 {
     return model.get_textures()[m_metallic_roughness];
 }
 
 
-const vk_texture_& sandbox::gltf::vk_material::get_occlusion(const vk_model& model) const
+const vk_texture& sandbox::gltf::vk_material::get_occlusion(const vk_model& model) const
 {
     return model.get_textures()[m_occlusion];
 }
 
 
-const vk_texture_& sandbox::gltf::vk_material::get_emissive(const vk_model& model) const
+const vk_texture& sandbox::gltf::vk_material::get_emissive(const vk_model& model) const
 {
     return model.get_textures()[m_emissive];
 }
 
 
-const hal::render::avk::image_instance& sandbox::gltf::vk_texture_::get_image() const
+const hal::render::avk::image_instance& sandbox::gltf::vk_texture::get_image() const
 {
     return m_image;
 }
 
 
-const hal::render::avk::sampler_instance& sandbox::gltf::vk_texture_::get_sampler() const
+const hal::render::avk::sampler_instance& sandbox::gltf::vk_texture::get_sampler() const
 {
     return m_sampler;
 }
