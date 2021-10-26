@@ -57,8 +57,9 @@ u_skin;
 
 
 layout(location = 0) out vec3 v_normal;
-layout(location = 1) out vec2 v_texCoords;
-
+layout(location = 1) out vec3 v_tangent;
+layout(location = 2) out vec2 v_tex_coords;
+layout(location = 3) out vec3 v_vert_color;
 
 void main()
 {
@@ -77,6 +78,10 @@ void main()
         u_instance_data.mvp * skin_transform * vec4(a_position, 1.0);
 
     gl_Position.y = 1. - gl_Position.y;
+
     v_normal = normalize(transpose(inverse(mat3(skin_transform))) * a_normal);
-    v_texCoords = a_texCoords0;
+    v_tangent = normalize(transpose(inverse(mat3(skin_transform))) * a_tangent);
+
+    v_tex_coords = a_texCoords0;
+    v_vert_color = a_color;
 }

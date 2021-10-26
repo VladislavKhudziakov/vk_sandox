@@ -7,6 +7,43 @@
 
 namespace sandbox::gltf
 {
+    class vk_model;
+
+    class vk_texture_
+    {
+        friend class vk_model_builder;
+
+    public:
+        const hal::render::avk::image_instance& get_image() const;
+        const hal::render::avk::sampler_instance& get_sampler() const;
+        
+    private:
+        hal::render::avk::image_instance m_image{};
+        hal::render::avk::sampler_instance m_sampler{};
+    };
+
+    
+    class vk_material
+    {
+        friend class vk_model_builder;
+
+    public:
+        const vk_texture_& get_base_color(const vk_model&) const;
+        const vk_texture_& get_normal(const vk_model&) const;
+        const vk_texture_& get_metallic_roughness(const vk_model&) const;
+        const vk_texture_& get_occlusion(const vk_model&) const;
+        const vk_texture_& get_emissive(const vk_model&) const;
+
+    private:
+        hal::render::avk::buffer_instance m_material_info_buffer{};
+        uint32_t m_base_color{};
+        uint32_t m_normal{};
+        uint32_t m_metallic_roughness{};
+        uint32_t m_occlusion{};
+        uint32_t m_emissive{};
+    };
+
+
     class vk_animation
     {
         friend class vk_model_builder;
@@ -55,8 +92,12 @@ namespace sandbox::gltf
         const hal::render::avk::buffer_instance& get_index_buffer() const;
         vk::IndexType get_indices_type() const;
         uint32_t get_indices_count() const;
+        
+        const vk_material& get_material(const vk_model&) const;
 
     private:
+        uint32_t m_material{};
+        
         hal::render::avk::buffer_instance m_vertex_buffer{};
         hal::render::avk::buffer_instance m_index_buffer{};
 
@@ -79,6 +120,7 @@ namespace sandbox::gltf
         bool is_skinned() const;
 
     private:
+
         std::vector<vk_primitive> m_primitives{};
         vk_skin m_skin{};
         bool m_skinned = false;
@@ -95,10 +137,11 @@ namespace sandbox::gltf
         using attribute_description = vk::VertexInputAttributeDescription;
         using binding_description = vk::VertexInputBindingDescription;
         using vertex_format = std::tuple<const attribute_description*, uint32_t, const binding_description*, uint32_t>;
-        // TODO: insert return statement here
-
+        
         const std::vector<vk_mesh>& get_meshes() const;
         const std::vector<vk_animation>& get_animations() const;
+        const std::vector<vk_material>& get_materials() const;
+        const std::vector<vk_texture_>& get_textures() const;
 
         vertex_format get_vertex_format();
 
@@ -108,6 +151,8 @@ namespace sandbox::gltf
 
         std::vector<vk_mesh> m_meshes{};
         std::vector<vk_animation> m_animations{};
+        std::vector<vk_texture_> m_textures{};
+        std::vector<vk_material> m_materials{};
     };
 
 
@@ -118,7 +163,10 @@ namespace sandbox::gltf
         vk_model_builder& set_vertex_format(const std::array<vk::Format, 8>&);
         vk_model_builder& use_skin(bool use_skin);
 
-        vk_model create(const gltf::model& mdl, hal::render::avk::buffer_pool& pool);
+        vk_model create(
+            const gltf::model& mdl,
+            hal::render::avk::buffer_pool& buffer_pool,
+            hal::render::avk::image_pool& image_pool);
 
     private:
         struct gpu_trs
@@ -143,7 +191,18 @@ namespace sandbox::gltf
             std::vector<gpu_trs> keys{};
         };
 
-        void create_geometry(const gltf::model& mdl, vk_model& model, hal::render::avk::buffer_pool& pool);
+        struct stb_pixel_data
+        {
+            size_t width;
+            size_t height;
+            vk::Format format{};
+            std::vector<uint8_t> pixels;
+        };
+
+        void create_geometry(
+            const gltf::model& mdl,
+            vk_model& model,
+            hal::render::avk::buffer_pool& buffer_pool);
 
         void create_skins(const gltf::model& mdl, vk_model& model, hal::render::avk::buffer_pool& pool);
         void create_skins_resources(
@@ -173,6 +232,24 @@ namespace sandbox::gltf
             uint64_t vtx_size,
             uint64_t offset,
             uint8_t* dst);
+        
+        void create_textures(
+          const gltf::model& mdl, 
+          hal::render::avk::image_pool& pool,
+          vk_model& result);
+
+        void create_materials(
+          const gltf::model& mdl, 
+          hal::render::avk::buffer_pool& buffer_pool,
+          hal::render::avk::image_pool& image_pool,
+          vk_model& result);
+
+        stb_pixel_data get_stb_pixel_data(const gltf::model& mdl, const gltf::image& image);
+       
+        uint32_t gen_texture_from_vec(
+            glm::vec4 glm_data,
+            std::vector<vk_texture_>& textures,
+            hal::render::avk::image_pool& pool);
 
         std::optional<std::array<vk::Format, 8>> m_fixed_format{};
         bool m_skinned = true;
@@ -249,42 +326,5 @@ namespace sandbox::gltf
         std::vector<hal::render::avk::buffer_instance> m_hierarchies{};
         std::vector<hal::render::avk::buffer_instance> m_progressions{};
         std::vector<animation_instance> m_animation_instances{};
-    };
-
-
-    struct vk_texture
-    {
-        vk::Image image;
-        vk::ImageView image_view;
-        vk::Sampler sampler;
-    };
-
-
-    class vk_texture_atlas
-    {
-    public:
-        static vk_texture_atlas from_gltf_model(const gltf::model& mdl, vk::CommandBuffer& command_buffer, uint32_t queue_family);
-
-        vk_texture_atlas() = default;
-
-        vk_texture_atlas(const vk_texture_atlas&) = delete;
-        vk_texture_atlas& operator=(const vk_texture_atlas&) = delete;
-
-        vk_texture_atlas(vk_texture_atlas&&) noexcept = default;
-        vk_texture_atlas& operator=(vk_texture_atlas&&) noexcept = default;
-
-        ~vk_texture_atlas() = default;
-
-        const vk_texture& get_texture(uint32_t index) const;
-
-    private:
-        std::vector<hal::render::avk::vma_image> m_images{};
-        std::vector<hal::render::avk::image_view> m_image_views{};
-        std::vector<std::pair<size_t, size_t>> m_image_sizes{};
-
-        std::vector<hal::render::avk::sampler> m_samplers{};
-        std::vector<vk_texture> m_vk_textures{};
-
-        std::vector<hal::render::avk::vma_buffer> m_staging_resources{};
     };
 } // namespace sandbox::gltf

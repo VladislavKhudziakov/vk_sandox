@@ -739,7 +739,7 @@ std::pair<avk::vma_image, avk::image_view> avk::gen_texture(
             .arrayLayers = layers,
             .samples = vk::SampleCountFlagBits::e1,
             .tiling = vk::ImageTiling::eOptimal,
-            .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+            .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled,
             .sharingMode = vk::SharingMode::eExclusive,
             .queueFamilyIndexCount = 1,
             .pQueueFamilyIndices = &queue_family,
@@ -925,9 +925,9 @@ void avk::upload_buffer_data(
 }
 
 
-sandbox::hal::render::avk::vk_format_info sandbox::hal::render::avk::get_format_info(VkFormat format)
+sandbox::hal::render::avk::vk_format_info sandbox::hal::render::avk::get_format_info(vk::Format format)
 {
-    return vk_format_table[format];
+    return vk_format_table[static_cast<VkFormat>(format)];
 }
 
 
@@ -962,5 +962,15 @@ VkDeviceSize sandbox::hal::render::avk::get_buffer_offset_alignment(vk::BufferUs
         align(props.limits.minTexelBufferOffsetAlignment);
     }
 
+    if (usage & vk::BufferUsageFlagBits::eVertexBuffer) {
+        alignment = 48;
+    }
+
     return alignment;
+}
+
+
+VkDeviceSize avk::get_aligned_size(VkDeviceSize size, VkDeviceSize alignment)
+{
+    return size + (alignment - 1) & ~(alignment - 1);
 }

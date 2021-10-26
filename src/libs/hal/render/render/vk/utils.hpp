@@ -164,7 +164,9 @@ namespace sandbox::hal::render::avk
         uint32_t channel_count;
     };
 
-    vk_format_info get_format_info(VkFormat format);
+    vk_format_info get_format_info(vk::Format format);
 
     VkDeviceSize get_buffer_offset_alignment(vk::BufferUsageFlags usage);
+
+    VkDeviceSize get_aligned_size(VkDeviceSize size, VkDeviceSize alignment);
 } // namespace sandbox::hal::render::avk

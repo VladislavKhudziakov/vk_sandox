@@ -364,6 +364,8 @@ namespace sandbox::gltf
         const pbr_metallic_roughness& get_pbr_metallic_roughness() const;
 
         const texture_data& get_normal_texture() const;
+        float get_normal_scale() const;
+
         const texture_data& get_occlusion_texture() const;
         const texture_data& get_emissive_texture() const;
         glm::vec3 get_emissive_factor() const;
@@ -377,6 +379,7 @@ namespace sandbox::gltf
     private:
         pbr_metallic_roughness m_pbr_metallic_roughness_data{};
         texture_data m_normal_texture{};
+        float m_normal_scale{1.0};
         texture_data m_occlusion_texture{};
         texture_data m_emissive_texture{};
         glm::vec3 m_emissive_factor{0, 0, 0};

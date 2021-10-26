@@ -321,9 +321,15 @@ material::material(const nlohmann::json& material_json)
         pbr.metallic_roughness_texture = extract_json_data<texture_data, false>(
             pbr_metallic_roughness_json, "metallicRoughnessTexture", pbr.metallic_roughness_texture, extract_texture_data);
     });
-
+    
     m_normal_texture = extract_json_data<texture_data, false>(
         material_json, "normalTexture", m_normal_texture, extract_texture_data);
+
+   do_if_found(material_json, "normalTexture", [this](const json& normal_json) {
+        do_if_found(normal_json, "scale", [this](const json& scale_json) {
+            m_normal_scale = scale_json.get<float>();
+        }); 
+    });
 
     m_occlusion_texture = extract_json_data<texture_data, false>(
         material_json, "occlusionTexture", m_occlusion_texture, extract_texture_data);
@@ -351,6 +357,12 @@ const material::pbr_metallic_roughness& material::get_pbr_metallic_roughness() c
 const material::texture_data& material::get_normal_texture() const
 {
     return m_normal_texture;
+}
+
+
+float sandbox::gltf::material::get_normal_scale() const
+{
+    return m_normal_scale;
 }
 
 
@@ -448,12 +460,12 @@ camera::camera(const nlohmann::json& camera_json)
                 perspective.yfov = perspective_json["yfov"];
                 perspective.znear = perspective_json["znear"];
 
-                do_if_found(perspective_json, "aspectRatio", [this, &perspective](const json& perspective_json) {
-                    perspective.aspect_ratio = perspective_json["aspectRatio"].get<float>();
+                do_if_found(perspective_json, "aspectRatio", [this, &perspective](const json& ratio_json) {
+                    perspective.aspect_ratio = ratio_json.get<float>();
                 });
 
                 do_if_found(perspective_json, "zfar", [this, &perspective](const json& perspective_json) {
-                    perspective.zfar = perspective_json["zfar"].get<float>();
+                    perspective.zfar = perspective_json.get<float>();
                 });
 
                 m_data = perspective;

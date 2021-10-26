@@ -220,7 +220,7 @@ void calculate_key(uint curr_animation, uint node, uint progression_ts_us, out m
         float curr_ts = animations_keys_timestamps[curr_animation].ts[curr_sampler].x;
         float next_ts = animations_keys_timestamps[curr_animation].ts[next_sampler].x;
 
-        progression =  (vec4(progression_ts_s) - curr_ts) / (next_ts - curr_ts);
+        progression = (vec4(progression_ts_s) - curr_ts) / (next_ts - curr_ts);
     }
 
     vec3 curr_translation = vec_interpolate(

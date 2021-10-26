@@ -14,6 +14,7 @@ using namespace sandbox;
 using namespace sandbox::hal;
 using namespace sandbox::hal::render;
 
+
 class test_sample_app : public sandbox::sample_app
 {
 public:
@@ -127,23 +128,22 @@ protected:
                               vk::Format::eR32G32B32Sfloat,
                               vk::Format::eR32G32B32A32Uint,
                               vk::Format::eR32G32B32A32Sfloat})
-                         .create(m_model, m_vertex_buffer_pool);
-
-        m_texture_atlas = gltf::vk_texture_atlas::from_gltf_model(m_model, curr_buffer, avk::context::queue_family(vk::QueueFlagBits::eGraphics));
+                         .create(m_model, m_buffer_pool, m_image_pool);
 
         m_uniform_buffer =
-            m_vertex_buffer_pool.get_builder()
+            m_buffer_pool.get_builder()
                 .set_size(sizeof(gltf::instance_transform_data))
                 .set_usage(vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst)
                 .create();
 
         m_animation_controller = gltf::animation_controller(m_model, m_geometry);
 
-        m_animation_controller.init_resources(m_vertex_buffer_pool, 1);
+        m_animation_controller.init_resources(m_buffer_pool, 1);
         m_anim_instance = m_animation_controller.instantiate_animation();
         m_anim_instance->play();
 
-        m_vertex_buffer_pool.flush(avk::context::queue_family(vk::QueueFlagBits::eGraphics), curr_buffer);
+        m_buffer_pool.flush(avk::context::queue_family(vk::QueueFlagBits::eGraphics), curr_buffer);
+        m_image_pool.flush(avk::context::queue_family(vk::QueueFlagBits::eGraphics), curr_buffer);
 
         curr_buffer.end();
 
@@ -198,11 +198,11 @@ private:
     void init_pipelines()
     {
         if (!m_vertex_shader) {
-            create_shader(m_vertex_shader, "./resources/test.vert.spv");
+            create_shader(m_vertex_shader, WORK_DIR"/resources/test.vert.spv");
         }
 
         if (!m_fragment_shader) {
-            create_shader(m_fragment_shader, "./resources/test.frag.spv");
+            create_shader(m_fragment_shader, WORK_DIR"/resources/test.frag.spv");
         }
 
         m_animation_controller.init_pipelines();
@@ -217,6 +217,8 @@ private:
             for (const auto& primitive : vk_mesh.get_primitives()) {
                 avk::pipeline_builder builder{};
 
+                const auto& mat = curr_vk_primitive->get_material(m_geometry);
+
                 builder.set_vertex_format(m_geometry.get_vertex_format())
                     .set_shader_stages({{m_vertex_shader, vk::ShaderStageFlagBits::eVertex}, {m_fragment_shader, vk::ShaderStageFlagBits::eFragment}})
                     .add_blend_state()
@@ -228,10 +230,15 @@ private:
                     .begin_descriptor_set()
                     .add_buffer(m_uniform_buffer, vk::DescriptorType::eUniformBuffer)
                     .add_buffer(m_animation_controller.get_hierarchies().front(), vk::DescriptorType::eStorageBuffer)
-                    .add_buffer(vk_mesh.get_skin().get_joints_buffer(), vk::DescriptorType::eUniformBuffer);
-
-                builder.finish_descriptor_set();
-
+                    .add_buffer(vk_mesh.get_skin().get_joints_buffer(), vk::DescriptorType::eUniformBuffer)
+                    .finish_descriptor_set()
+                    .begin_descriptor_set()
+                    .add_texture(mat.get_base_color(m_geometry).get_image(), mat.get_base_color(m_geometry).get_sampler())
+                    .add_texture(mat.get_normal(m_geometry).get_image(), mat.get_normal(m_geometry).get_sampler())
+                    .add_texture(mat.get_metallic_roughness(m_geometry).get_image(), mat.get_metallic_roughness(m_geometry).get_sampler())
+                    .add_texture(mat.get_occlusion(m_geometry).get_image(), mat.get_occlusion(m_geometry).get_sampler())
+                    .add_texture(mat.get_emissive(m_geometry).get_image(), mat.get_emissive(m_geometry).get_sampler())
+                    .finish_descriptor_set();
                 m_models_primitives_pipelines[mesh_id].emplace_back(builder.create_graphics_pipeline(m_pass.get_native_pass(), 0));
                 curr_vk_primitive++;
             }
@@ -269,7 +276,7 @@ private:
 
         m_animation_controller.update(dt);
 
-        m_vertex_buffer_pool.update(command_buffer);
+        m_buffer_pool.update(command_buffer);
         m_animation_controller.update(command_buffer);
 
         m_pass.begin(command_buffer);
@@ -292,8 +299,6 @@ private:
     gltf::animation_controller m_animation_controller{};
     gltf::animation_instance* m_anim_instance{};
 
-    gltf::vk_texture_atlas m_texture_atlas{};
-
     avk::render_pass_instance m_pass{};
 
     std::vector<avk::semaphore> m_semaphores{};
@@ -304,7 +309,8 @@ private:
     avk::command_pool m_command_pool{};
     avk::command_buffer_list m_command_buffer{};
 
-    avk::buffer_pool m_vertex_buffer_pool{};
+    avk::buffer_pool m_buffer_pool{};
+    avk::image_pool m_image_pool{};
 
     avk::shader_module m_vertex_shader{};
     avk::shader_module m_fragment_shader{};
