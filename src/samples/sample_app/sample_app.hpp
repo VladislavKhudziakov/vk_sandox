@@ -70,7 +70,7 @@ namespace sandbox
             float m_y_angle{0};
 
             glm::vec3 m_eye_position{0, 0, 0};
-            
+
             glm::mat4 m_view_matrix{1};
             glm::mat4 m_proj_matrix{1};
 
@@ -101,12 +101,12 @@ namespace sandbox
     private:
         glm::ivec2 m_last_mouse_position{-1, -1};
         glm::ivec2 m_curr_mouse_position{-1, -1};
-        
+
         enum camera_move_state
         {
-           CAMERA_MOVE_LEFT = 1,
-           CAMERA_MOVE_RIGHT = 2,
-           CAMERA_MOVE_FORWARD = 4,
+            CAMERA_MOVE_LEFT = 1,
+            CAMERA_MOVE_RIGHT = 2,
+            CAMERA_MOVE_FORWARD = 4,
             CAMERA_MOVE_BACKWARD = 8
         };
 

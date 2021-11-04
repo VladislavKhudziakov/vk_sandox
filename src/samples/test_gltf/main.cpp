@@ -244,7 +244,7 @@ private:
 
         //auto proj_matrix = curr_camera.calculate_projection(float(fb_width) / float(fb_height));
 
-        
+
         glm::mat4 model_matrix{1};
         model_matrix = glm::translate(model_matrix, {1, 2, 3});
         gltf::instance_transform_data istance_transform{

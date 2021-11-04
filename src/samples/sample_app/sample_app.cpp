@@ -116,7 +116,7 @@ void sandbox::sample_app::update(uint64_t dt)
     auto dpos = m_curr_mouse_position - m_last_mouse_position;
 
     constexpr float sensivity = 0.25;
-    
+
     if (m_last_mouse_position.x >= 0) {
         if (m_curr_mouse_position.x <= 1) {
             m_main_camera.rotate_x(glm::radians(float(-1) * sensivity));
@@ -136,7 +136,7 @@ void sandbox::sample_app::update(uint64_t dt)
     }
 
     m_last_mouse_position = m_curr_mouse_position;
-    
+
     m_main_camera.update(m_framebuffer_width, m_framebuffer_height);
 
     const auto& fences = get_wait_fences();
@@ -356,7 +356,7 @@ glm::mat4 sandbox::sample_app::main_camera::get_proj_matrix() const
 
 glm::mat4 sandbox::sample_app::main_camera::get_view_matrix() const
 {
-    glm::vec3 target =  glm::vec3{0, 0, 1};
+    glm::vec3 target = glm::vec3{0, 0, 1};
 
     auto m = glm::yawPitchRoll(-m_x_angle, m_y_angle, 0.0f);
 
