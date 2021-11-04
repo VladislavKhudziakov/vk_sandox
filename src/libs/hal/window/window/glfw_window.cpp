@@ -264,10 +264,65 @@ namespace
         }
     };
 
-    class glw_window : public sandbox::hal::window::impl
+    class glfw_window : public window
     {
     public:
-        glw_window(size_t width, size_t height, const std::string& name, std::unique_ptr<window::main_loop_update_listener> update_listener)
+        static void window_button_callback(GLFWwindow* window, int button, int action, int mods)
+        {
+            auto* w = reinterpret_cast<glfw_window*>(glfwGetWindowUserPointer(window));
+            auto e = mouse_button_event{};
+
+            switch (button) {
+                case GLFW_MOUSE_BUTTON_1:
+                    e.name = mouse_button_event::button_name::left;
+                    break;
+                case GLFW_MOUSE_BUTTON_2:
+                    e.name = mouse_button_event::button_name::right;
+                    break;
+                case GLFW_MOUSE_BUTTON_3:
+                    e.name = mouse_button_event::button_name::wheel;
+                    break;
+                default:
+                    return;
+            }
+
+            e.state = static_cast<press_state>(action);
+            e.mods = mods;
+
+            w->emit_event(e);
+        }
+
+
+        static void window_cursor_callback(GLFWwindow* window, double x, double y)
+        {
+            auto* w = reinterpret_cast<glfw_window*>(glfwGetWindowUserPointer(window));
+
+            w->emit_event(cursor_positon_event{uint32_t(x), uint32_t(y)});
+        }
+
+
+        static void window_key_callback(GLFWwindow* window, int key, int code, int action, int mods)
+        {
+            auto* w = reinterpret_cast<glfw_window*>(glfwGetWindowUserPointer(window));
+            keyboard_event e{};
+
+            e.code = code;
+            e.state = static_cast<press_state>(action);
+            e.name = static_cast<keyboard_event::key_name>(key);
+            e.mods = mods;
+
+            w->emit_event(e);
+        }
+
+
+        static void window_scroll_callback(GLFWwindow* window, double ox, double oy)
+        {
+            auto* w = reinterpret_cast<glfw_window*>(glfwGetWindowUserPointer(window));
+            w->emit_event(scroll_event{ox, oy});
+        }
+
+
+        glfw_window(size_t width, size_t height, const std::string& name, std::unique_ptr<window::main_loop_update_listener> update_listener)
             : m_update_listener(std::move(update_listener))
         {
             static std::weak_ptr<window_context_init_raii> window_context{};
@@ -302,14 +357,20 @@ namespace
             });
 
             m_swapchain.reset(m_window_handler.get(), m_surface);
+
+            glfwSetWindowUserPointer(m_window_handler.get(), this);
+            glfwSetMouseButtonCallback(m_window_handler.get(), window_button_callback);
+            glfwSetCursorPosCallback(m_window_handler.get(), window_cursor_callback);
+            glfwSetKeyCallback(m_window_handler.get(), window_key_callback);
+            glfwSetScrollCallback(m_window_handler.get(), window_scroll_callback);
         }
 
-        ~glw_window() override
+        ~glfw_window() override
         {
             avk::context::device()->waitIdle();
         }
 
-        bool closed() override
+        bool closed() const override
         {
             return glfwWindowShouldClose(m_window_handler.get());
         }
@@ -571,11 +632,11 @@ namespace
 } // namespace
 
 
-std::unique_ptr<window::impl> sandbox::hal::window::impl::create(
+std::unique_ptr<window> window::create(
     size_t width,
     size_t height,
     const std::string& name,
     std::unique_ptr<main_loop_update_listener> main_loop_listener)
 {
-    return std::make_unique<glw_window>(width, height, name, std::move(main_loop_listener));
+    return std::make_unique<glfw_window>(width, height, name, std::move(main_loop_listener));
 }

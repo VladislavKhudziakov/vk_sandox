@@ -49,6 +49,8 @@ namespace sandbox::hal::render::avk
     }
 
 
+    bool is_depth_format(vk::Format);
+
     std::pair<avk::vma_image, avk::image_view> gen_attachment(
         uint32_t width,
         uint32_t height,

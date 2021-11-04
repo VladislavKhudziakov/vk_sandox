@@ -4,6 +4,7 @@
 
 #include <utils/conditions_helpers.hpp>
 #include <utils/scope_helpers.hpp>
+#include "pass.hpp"
 
 using namespace sandbox::hal::render;
 

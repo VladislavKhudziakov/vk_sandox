@@ -138,9 +138,9 @@ namespace
 
 
 vk_model sandbox::gltf::vk_model_builder::load_from_file(
-  const std::string& path, 
-  hal::render::avk::buffer_pool& buffer_pool, 
-  hal::render::avk::image_pool& image_pool)
+    const std::string& path,
+    hal::render::avk::buffer_pool& buffer_pool,
+    hal::render::avk::image_pool& image_pool)
 {
     return vk_model();
 }

@@ -7,4 +7,7 @@ make_bin(
     DEPENDS
         hal_render
         hal_window
+        spdlog
+        glfw
+        glm
 )

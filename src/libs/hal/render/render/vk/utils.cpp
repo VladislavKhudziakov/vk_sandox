@@ -251,7 +251,20 @@ namespace
         {VK_FORMAT_G16_B16_R16_3PLANE_444_UNORM, {6, 3}}};
 }
 
-std::pair<avk::vma_image, avk::image_view> sandbox::hal::render::avk::gen_attachment(
+
+bool avk::is_depth_format(vk::Format format)
+{
+    // clang-format off
+    return format == vk::Format::eD24UnormS8Uint || 
+        format == vk::Format::eD16Unorm || 
+        format == vk::Format::eD16UnormS8Uint || 
+        format == vk::Format::eD32Sfloat ||
+        format == vk::Format::eD32SfloatS8Uint;
+    // clang-format on
+}
+
+
+std::pair<avk::vma_image, avk::image_view> avk::gen_attachment(
     uint32_t width,
     uint32_t height,
     vk::Format format,
@@ -259,14 +272,7 @@ std::pair<avk::vma_image, avk::image_view> sandbox::hal::render::avk::gen_attach
     vk::ImageUsageFlags usage,
     vk::SampleCountFlagBits samples)
 {
-    // clang-format off
-    bool is_depth =
-        format == vk::Format::eD24UnormS8Uint ||
-        format == vk::Format::eD16Unorm ||
-        format == vk::Format::eD16UnormS8Uint ||
-        format == vk::Format::eD32Sfloat ||
-        format == vk::Format::eD32SfloatS8Uint;
-    // clang-format on
+    bool is_depth = is_depth_format(format);
 
     if (is_depth) {
         usage |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
@@ -419,7 +425,9 @@ avk::gen_framebuffer(
             attachment_height *= attachments_scales[i].second;
         }
 
-        vk::ImageUsageFlags attachment_usage = {};
+        // clang-format off
+        vk::ImageUsageFlags attachment_usage = vk::ImageUsageFlagBits::eTransferSrc;
+        // clang-format on
 
         if (i < attachments_usages.size()) {
             attachment_usage = attachments_usages[i];

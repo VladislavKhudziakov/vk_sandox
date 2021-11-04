@@ -159,9 +159,9 @@ namespace sandbox::gltf
     {
     public:
         static vk_model load_from_file(
-          const std::string&, 
-          hal::render::avk::buffer_pool& buffer_pool, 
-          hal::render::avk::image_pool& image_pool);
+            const std::string&,
+            hal::render::avk::buffer_pool& buffer_pool,
+            hal::render::avk::image_pool& image_pool);
 
         vk_model_builder() = default;
         vk_model_builder& set_vertex_format(const std::array<vk::Format, 8>&);

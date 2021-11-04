@@ -45,39 +45,29 @@ protected:
     void create_render_passes() override
     {
         m_pass = avk::render_pass_builder()
-                     .begin_sub_pass(vk::SampleCountFlagBits::e1)
-                     .add_color_attachment(
-                         {0, 0},
-                         {1.0f, 1.0f},
-                         vk::Format::eR8G8B8A8Srgb,
-                         vk::ImageLayout::eUndefined,
-                         vk::ImageLayout::eColorAttachmentOptimal,
-                         vk::ImageLayout::eTransferSrcOptimal,
-                         std::array{0.2f, 0.3f, 0.6f, 1.0f})
-                     .set_depth_stencil_attachment(
-                         {0, 0},
-                         {1.0f, 1.0f},
-                         vk::Format::eD24UnormS8Uint,
-                         vk::ImageLayout::eUndefined,
-                         vk::ImageLayout::eDepthStencilAttachmentOptimal,
-                         vk::ImageLayout::eDepthStencilAttachmentOptimal,
-                         1.0f)
+                     .begin_sub_pass()
+                     .begin_attachment(vk::Format::eR8G8B8A8Srgb, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eTransferSrcOptimal)
+                     .set_attachmen_clear({0.2f, 0.3f, 0.6f, 1.0f})
+                     .finish_attachment()
+                     .begin_attachment(vk::Format::eD24UnormS8Uint, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal, vk::ImageLayout::eDepthStencilAttachmentOptimal)
+                     .set_attachmen_clear(avk::render_pass_builder::depth_clear{1.0f, 0u})
+                     .finish_attachment()
                      .finish_sub_pass()
                      .add_sub_pass_dependency({
-                         .srcSubpass = VK_SUBPASS_EXTERNAL,
-                         .dstSubpass = 0,
-                         .srcStageMask = vk::PipelineStageFlagBits::eTransfer,
-                         .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                         .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-                         .dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead,
+                         .srcSubpass = 0,
+                         .dstSubpass = VK_SUBPASS_EXTERNAL,
+                         .srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                         .dstStageMask = vk::PipelineStageFlagBits::eTransfer,
+                         .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+                         .dstAccessMask = vk::AccessFlagBits::eTransferRead,
                          .dependencyFlags = {},
                      })
-                     .create_pass();
+                     .create_pass(avk::context::queue_family(vk::QueueFlagBits::eGraphics));
     }
 
     void create_framebuffers(uint32_t width, uint32_t height) override
     {
-        m_pass.resize(avk::context::queue_family(vk::QueueFlagBits::eGraphics), width, height);
+        m_pass.resize(width, height);
     }
 
     void create_sync_primitives() override
@@ -165,7 +155,7 @@ protected:
 
     vk::Image get_final_image() override
     {
-        return m_pass.get_framebuffer_image(0);
+        return m_pass.get_subpass().get_color_attachment(0, m_pass);
     }
 
     const std::vector<vk::Semaphore>& get_wait_semaphores() override
@@ -221,9 +211,9 @@ private:
                     .set_shader_stages({{m_vertex_shader, vk::ShaderStageFlagBits::eVertex}, {m_fragment_shader, vk::ShaderStageFlagBits::eFragment}})
                     .add_blend_state()
                     .add_push_constant(vk::ShaderStageFlagBits::eVertex, uint32_t(0))
-                    .add_specialization_constant(uint32_t(1))                                       // use hierarchy
-                    .add_specialization_constant(uint32_t(mesh.is_skinned()))                       // use skin
-                    .add_specialization_constant(uint32_t(mesh.get_skin().get_hierarchy_size()))  // hierarchy size
+                    .add_specialization_constant(uint32_t(1))                                    // use hierarchy
+                    .add_specialization_constant(uint32_t(mesh.is_skinned()))                    // use skin
+                    .add_specialization_constant(uint32_t(mesh.get_skin().get_hierarchy_size())) // hierarchy size
                     .add_specialization_constant(uint32_t(mesh.get_skin().get_joints_count()))   // skin size
                     .begin_descriptor_set()
                     .add_buffer(m_uniform_buffer, vk::DescriptorType::eUniformBuffer)
@@ -237,7 +227,7 @@ private:
                     .add_texture(mat.get_occlusion(m_geometry).get_image(), mat.get_occlusion(m_geometry).get_sampler())
                     .add_texture(mat.get_emissive(m_geometry).get_image(), mat.get_emissive(m_geometry).get_sampler())
                     .finish_descriptor_set();
-                m_models_primitives_pipelines[mesh_id].emplace_back(builder.create_graphics_pipeline(m_pass.get_native_pass(), 0));
+                m_models_primitives_pipelines[mesh_id].emplace_back(builder.create_graphics_pipeline(m_pass, 0));
                 curr_primitive++;
             }
         }
@@ -246,21 +236,22 @@ private:
 
     void write_command_buffers(uint64_t dt)
     {
-        auto& curr_camera = m_model.get_cameras().back();
+        //auto& curr_camera = m_model.get_cameras().back();
 
-        auto view_matrix = glm::lookAt(glm::vec3{0.75, 0.5, 1}, glm::vec3{0, 0, 0}, glm::vec3{0, 1, 0});
+        //auto view_matrix = glm::lookAt(glm::vec3{0.75, 0.5, 1}, glm::vec3{0, 0, 0}, glm::vec3{0, 1, 0});
 
-        auto [fb_width, fb_height] = get_window_framebuffer_size();
+        //auto [fb_width, fb_height] = get_window_framebuffer_size();
 
-        auto proj_matrix = curr_camera.calculate_projection(float(fb_width) / float(fb_height));
+        //auto proj_matrix = curr_camera.calculate_projection(float(fb_width) / float(fb_height));
 
+        
         glm::mat4 model_matrix{1};
         model_matrix = glm::translate(model_matrix, {1, 2, 3});
         gltf::instance_transform_data istance_transform{
             .model = model_matrix,
-            .view = view_matrix,
-            .proj = proj_matrix,
-            .mvp = proj_matrix * view_matrix};
+            .view = get_main_camera().get_view_matrix(),
+            .proj = get_main_camera().get_proj_matrix(),
+            .mvp = get_main_camera().get_proj_matrix() * get_main_camera().get_view_matrix()};
 
         vk::CommandBuffer& command_buffer = m_command_buffer->front();
         command_buffer.reset();
