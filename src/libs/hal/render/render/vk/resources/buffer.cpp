@@ -123,8 +123,10 @@ void sandbox::hal::render::avk::buffer_pool::update_subresource(uint32_t subreso
 }
 
 
-void avk::buffer_pool::flush(uint32_t queue_family, vk::CommandBuffer& command_buffer)
+avk::submit_handler avk::buffer_pool::submit(vk::QueueFlagBits queue)
 {
+
+    const auto queue_family = avk::context::queue_family(queue);
     if (m_staging_size > 0) {
         m_staging_buffer = avk::gen_staging_buffer(queue_family, m_staging_size, [this](uint8_t* dst) {
             upload_staging_data(dst);
@@ -142,14 +144,16 @@ void avk::buffer_pool::flush(uint32_t queue_family, vk::CommandBuffer& command_b
         VmaAllocationCreateInfo{
             .usage = VMA_MEMORY_USAGE_GPU_ONLY});
 
-    update_internal(command_buffer, UPDATE_RESOURCE_BUFFER_BIT);
+    auto result = update_internal(queue, UPDATE_RESOURCE_BUFFER_BIT);
+    m_queue_type = queue;
     m_upload_callbacks.clear();
+    return result;
 }
 
 
-void avk::buffer_pool::update(vk::CommandBuffer& command_buffer)
+avk::submit_handler avk::buffer_pool::update()
 {
-    update_internal(command_buffer, UPDATE_STAGING_BUFFER_BIT | UPDATE_RESOURCE_BUFFER_BIT);
+    return update_internal(m_queue_type, UPDATE_STAGING_BUFFER_BIT | UPDATE_RESOURCE_BUFFER_BIT);
 }
 
 
@@ -200,9 +204,7 @@ avk::buffer_pool::get_pipeline_stages_acceses_by_usage(vk::BufferUsageFlags usag
 }
 
 
-void avk::buffer_pool::update_internal(
-    vk::CommandBuffer& command_buffer,
-    uint32_t update_state)
+avk::submit_handler avk::buffer_pool::update_internal(vk::QueueFlagBits queue, uint32_t update_state)
 {
     if (update_state & UPDATE_STAGING_BUFFER_BIT) {
         if (!m_upload_callbacks.empty()) {
@@ -258,11 +260,15 @@ void avk::buffer_pool::update_internal(
         }
 
         if (!buffer_copies.empty()) {
-            command_buffer.copyBuffer(m_staging_buffer.as<vk::Buffer>(), m_resource.as<vk::Buffer>(), buffer_copies);
-            command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, dst_stages, {}, {}, buffer_barriers, {});
+            return avk::one_time_submit(queue, [&](vk::CommandBuffer& command_buffer) {
+                command_buffer.copyBuffer(m_staging_buffer.as<vk::Buffer>(), m_resource.as<vk::Buffer>(), buffer_copies);
+                command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, dst_stages, {}, {}, buffer_barriers, {});
+            });
         }
 
         m_subresources_to_update.clear();
+
+        return {};
     }
 }
 

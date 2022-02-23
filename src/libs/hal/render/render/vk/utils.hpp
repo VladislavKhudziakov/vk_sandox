@@ -171,4 +171,24 @@ namespace sandbox::hal::render::avk
     VkDeviceSize get_buffer_offset_alignment(vk::BufferUsageFlags usage);
 
     VkDeviceSize get_aligned_size(VkDeviceSize size, VkDeviceSize alignment);
+    
+    class submit_handler
+    {
+        friend submit_handler one_time_submit(vk::QueueFlagBits queue, const std::function<void(vk::CommandBuffer& command_buffer)>& callback);
+    public:
+        submit_handler() = default;
+        submit_handler(const submit_handler&) = delete;
+        submit_handler& operator=(const submit_handler&) = delete;
+        submit_handler(submit_handler&&) = default;
+        submit_handler& operator=(submit_handler&&) = default;
+        ~submit_handler();
+
+        void wait() const;
+    private:
+        avk::command_pool m_pool{};
+        avk::command_buffer_list m_command_buffer{};
+        mutable avk::fence m_fence{};
+    };
+      
+    submit_handler one_time_submit(vk::QueueFlagBits queue, const std::function<void(vk::CommandBuffer& command_buffer)>& callback);
 } // namespace sandbox::hal::render::avk

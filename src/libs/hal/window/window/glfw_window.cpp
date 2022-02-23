@@ -453,7 +453,7 @@ namespace
                      },
                  },
 
-                 vk::ImageMemoryBarrier{
+                vk::ImageMemoryBarrier{
                      .srcAccessMask = {},
                      .dstAccessMask = {},
 
@@ -472,7 +472,7 @@ namespace
                          .baseArrayLayer = 0,
                          .layerCount = 1,
                      },
-                 }});
+                }});
 
             current_command_buffer.blitImage(
                 src_image,
@@ -542,7 +542,7 @@ namespace
                      },
                  },
 
-                 vk::ImageMemoryBarrier{
+                vk::ImageMemoryBarrier{
                      .srcAccessMask = {},
                      .dstAccessMask = {},
 
@@ -561,7 +561,7 @@ namespace
                          .baseArrayLayer = 0,
                          .layerCount = 1,
                      },
-                 }});
+                }});
 
             current_command_buffer.end();
 

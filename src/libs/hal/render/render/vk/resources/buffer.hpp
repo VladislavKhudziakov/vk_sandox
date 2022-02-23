@@ -1,6 +1,6 @@
 #pragma once
 
-#include <render/vk/raii.hpp>
+#include <render/vk/utils.hpp>
 
 #include <unordered_set>
 
@@ -60,8 +60,8 @@ namespace sandbox::hal::render::avk
         void add_buffer_instance(buffer_instance* instance);
         void update_subresource(uint32_t subresource, std::function<void(uint8_t*)> cb);
 
-        void flush(uint32_t queue_family, vk::CommandBuffer& command_buffer);
-        void update(vk::CommandBuffer& command_buffer);
+        avk::submit_handler submit(vk::QueueFlagBits queue);
+        avk::submit_handler update();
 
         buffer_builder get_builder();
         vk::Buffer get_buffer() const;
@@ -84,7 +84,7 @@ namespace sandbox::hal::render::avk
 
         static std::pair<vk::PipelineStageFlags, vk::AccessFlags> get_pipeline_stages_acceses_by_usage(vk::BufferUsageFlags usage);
 
-        void update_internal(vk::CommandBuffer& command_buffer, uint32_t update_state);
+        avk::submit_handler update_internal(vk::QueueFlagBits queue, uint32_t update_state);
         void upload_staging_data(uint8_t* dst);
 
         uint32_t m_queue_family{};
@@ -98,5 +98,7 @@ namespace sandbox::hal::render::avk
         vk::BufferUsageFlags m_usage{};
         avk::vma_buffer m_resource{};
         avk::vma_buffer m_staging_buffer{};
+
+        vk::QueueFlagBits m_queue_type{};
     };
 } // namespace sandbox::hal::render::avk

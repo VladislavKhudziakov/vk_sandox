@@ -47,7 +47,7 @@ namespace sandbox::hal::render::avk
         static VmaAllocator allocator();
         static uint32_t queue_family(vk::QueueFlagBits);
         static uint32_t queues_count(vk::QueueFlagBits);
-        static vk::Queue queue(vk::QueueFlagBits, uint32_t index);
+        static vk::Queue queue(vk::QueueFlagBits, uint32_t index = 0);
 
     private:
         enum class init_status

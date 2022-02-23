@@ -236,7 +236,7 @@ void avk::image_pool::update_subresource(uint32_t subresource, std::function<voi
 }
 
 
-void avk::image_pool::update(vk::CommandBuffer& command_buffer)
+avk::submit_handler avk::image_pool::update()
 {
     if (!m_upload_callbacks.empty()) {
         void* dst_ptr{nullptr};
@@ -262,13 +262,20 @@ void avk::image_pool::update(vk::CommandBuffer& command_buffer)
     }
 
 
-    for (auto& subres : m_subresources_to_update) {
-        if (m_subresources[subres].reserve_staging_space) {
-            copy_subres_data(command_buffer, m_subresources[subres]);
-        }
+    if (!m_subresources_to_update.empty()) 
+    {
+        auto result = avk::one_time_submit(m_queue, [&](vk::CommandBuffer& command_buffer) {
+            for (auto& subres : m_subresources_to_update) {
+                if (m_subresources[subres].reserve_staging_space) {
+                    copy_subres_data(command_buffer, m_subresources[subres]);
+                }
+            }
+        });
+
+         m_subresources_to_update.clear();
     }
 
-    m_subresources_to_update.clear();
+    return {};
 }
 
 
@@ -535,8 +542,10 @@ void avk::image_pool::image_pipeline_barrier(
 }
 
 
-void avk::image_pool::flush(uint32_t queue_family, vk::CommandBuffer& command_buffer)
+avk::submit_handler avk::image_pool::submit(vk::QueueFlagBits queue)
 {
+    const auto queue_family = avk::context::queue_family(queue);
+
     if (m_staging_buffer_size > 0) {
         m_staging_buffer = avk::gen_staging_buffer(queue_family, m_staging_buffer_size, [this](uint8_t* dst) {
             for (const auto& cb : m_upload_callbacks) {
@@ -545,11 +554,14 @@ void avk::image_pool::flush(uint32_t queue_family, vk::CommandBuffer& command_bu
         });
     }
 
+    m_queue = queue;
 
-    for (auto& subres : m_subresources) {
-        gen_subresource_images(subres, queue_family);
-        if (subres.reserve_staging_space) {
-            copy_subres_data(command_buffer, subres);
+    return avk::one_time_submit(queue, [&](vk::CommandBuffer& command_buffer) {
+        for (auto& subres : m_subresources) {
+            gen_subresource_images(subres, queue_family);
+            if (subres.reserve_staging_space) {
+                copy_subres_data(command_buffer, subres);
+            }
         }
-    }
+    });
 }

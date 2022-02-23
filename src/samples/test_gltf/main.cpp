@@ -28,7 +28,7 @@ protected:
     void update(uint64_t dt) override
     {
         write_command_buffers(dt);
-
+          
         vk::Queue queue = avk::context::queue(vk::QueueFlagBits::eGraphics, 0);
 
         queue.submit(vk::SubmitInfo{
@@ -91,23 +91,6 @@ protected:
             .commandBufferCount = 1,
         });
 
-        avk::command_pool pool = avk::create_command_pool(
-            avk::context::device()->createCommandPool(vk::CommandPoolCreateInfo{
-                .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-                .queueFamilyIndex = avk::context::queue_family(vk::QueueFlagBits::eGraphics),
-            }));
-
-        auto resources_buffer = avk::allocate_command_buffers(vk::CommandBufferAllocateInfo{
-            .commandPool = pool,
-            .commandBufferCount = 1,
-        });
-
-        auto curr_buffer = resources_buffer->front();
-
-        curr_buffer.begin(vk::CommandBufferBeginInfo{
-            .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
-        });
-
         m_geometry = gltf::vk_model_builder()
                          .set_vertex_format(
                              {vk::Format::eR32G32B32Sfloat,
@@ -132,25 +115,10 @@ protected:
         m_anim_instance = m_animation_controller.instantiate_animation();
         m_anim_instance->play();
 
-        m_buffer_pool.flush(avk::context::queue_family(vk::QueueFlagBits::eGraphics), curr_buffer);
-        m_image_pool.flush(avk::context::queue_family(vk::QueueFlagBits::eGraphics), curr_buffer);
-
-        curr_buffer.end();
-
-        auto graphics_queue = avk::context::queue(vk::QueueFlagBits::eGraphics, 0);
-        auto fence = avk::create_fence(avk::context::device()->createFence({}));
-
-        graphics_queue.submit(
-            vk::SubmitInfo{
-                .waitSemaphoreCount = 0,
-                .commandBufferCount = static_cast<uint32_t>(resources_buffer->size()),
-                .pCommandBuffers = resources_buffer->data(),
-            },
-            fence);
+        const auto buffer_pool_future = m_buffer_pool.submit(vk::QueueFlagBits::eGraphics);
+        const auto image_pool_future = m_image_pool.submit(vk::QueueFlagBits::eGraphics);
 
         init_pipelines();
-
-        VK_CALL(avk::context::device()->waitForFences({fence}, VK_TRUE, UINT64_MAX));
     }
 
     vk::Image get_final_image() override
@@ -236,15 +204,6 @@ private:
 
     void write_command_buffers(uint64_t dt)
     {
-        //auto& curr_camera = m_model.get_cameras().back();
-
-        //auto view_matrix = glm::lookAt(glm::vec3{0.75, 0.5, 1}, glm::vec3{0, 0, 0}, glm::vec3{0, 1, 0});
-
-        //auto [fb_width, fb_height] = get_window_framebuffer_size();
-
-        //auto proj_matrix = curr_camera.calculate_projection(float(fb_width) / float(fb_height));
-
-
         glm::mat4 model_matrix{1};
         model_matrix = glm::translate(model_matrix, {1, 2, 3});
         gltf::instance_transform_data istance_transform{
@@ -265,7 +224,7 @@ private:
 
         m_animation_controller.update(dt);
 
-        m_buffer_pool.update(command_buffer);
+        m_buffer_pool.update();
         m_animation_controller.update(command_buffer);
 
         m_pass.begin(command_buffer);

@@ -360,7 +360,7 @@ avk::vma_buffer avk::gen_staging_buffer(
         });
 
         void* mapped_data{nullptr};
-        VK_C_CALL(vmaMapMemory(avk::context::allocator(), buffer.as<VmaAllocation>(), &mapped_data));
+        VK_CALL(vmaMapMemory(avk::context::allocator(), buffer.as<VmaAllocation>(), &mapped_data));
         assert(mapped_data != nullptr);
         on_buffer_mapped(reinterpret_cast<uint8_t*>(mapped_data));
     }
@@ -981,4 +981,54 @@ VkDeviceSize sandbox::hal::render::avk::get_buffer_offset_alignment(vk::BufferUs
 VkDeviceSize avk::get_aligned_size(VkDeviceSize size, VkDeviceSize alignment)
 {
     return size + (alignment - 1) & ~(alignment - 1);
+}
+
+
+avk::submit_handler::~submit_handler()
+{
+    wait();
+}
+
+
+void avk::submit_handler::wait() const
+{
+    if (m_fence) {
+        VK_CALL(avk::context::device()->waitForFences({m_fence}, VK_TRUE, UINT64_MAX));
+        m_fence = {};
+    }
+}
+
+
+avk::submit_handler avk::one_time_submit(vk::QueueFlagBits queue, const std::function<void(vk::CommandBuffer& command_buffer)>& callback)
+{
+    submit_handler handler{};
+
+    handler.m_pool = avk::create_command_pool(avk::context::device()->createCommandPool(vk::CommandPoolCreateInfo{
+        .queueFamilyIndex = avk::context::queue_family(queue)
+    }));
+
+    handler.m_command_buffer = avk::allocate_command_buffers(vk::CommandBufferAllocateInfo{
+        .commandPool = handler.m_pool,
+        .commandBufferCount = 1
+    }, false);
+
+    handler.m_command_buffer->front().begin(vk::CommandBufferBeginInfo{
+        .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
+    });
+
+    callback(handler.m_command_buffer->front());
+    
+    handler.m_command_buffer->front().end();
+
+    handler.m_fence = avk::create_fence(avk::context::device()->createFence({}));
+
+   VK_CALL(avk::context::queue(queue).submit(
+        vk::SubmitInfo{
+            .waitSemaphoreCount = 0,
+            .commandBufferCount = static_cast<uint32_t>(handler.m_command_buffer->size()),
+            .pCommandBuffers = handler.m_command_buffer->data(),
+        },
+        handler.m_fence));
+
+    return handler;
 }

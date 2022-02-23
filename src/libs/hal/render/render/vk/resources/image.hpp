@@ -1,6 +1,6 @@
 #pragma once
 
-#include <render/vk/raii.hpp>
+#include <render/vk/utils.hpp>
 #include <unordered_set>
 
 
@@ -88,8 +88,8 @@ namespace sandbox::hal::render::avk
         void add_image_instance(image_instance& instance, bool gen_mips, bool reserve_staging_space);
         void update_subresource(uint32_t subresource, std::function<void(uint8_t* dst)>);
 
-        void flush(uint32_t queue_family, vk::CommandBuffer& command_buffer);
-        void update(vk::CommandBuffer& command_buffer);
+        avk::submit_handler submit(vk::QueueFlagBits queue);
+        avk::submit_handler update();
 
         vk::Image get_subresource_image(uint32_t) const;
         vk::ImageView get_subresource_image_view(uint32_t) const;
@@ -144,5 +144,7 @@ namespace sandbox::hal::render::avk
 
         avk::vma_buffer m_staging_buffer{};
         VkDeviceSize m_staging_buffer_size{};
+
+        vk::QueueFlagBits m_queue;
     };
 } // namespace sandbox::hal::render::avk
